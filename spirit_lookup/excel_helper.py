@@ -72,7 +72,9 @@ class ExcelHelperWindow:
         self.columns_frame.grid(row=4, column=0, columnspan=3, sticky="nsew")
         self.columns_inner = self._create_scrollable_section(self.columns_frame)
 
-        self.contacts_frame = ttk.LabelFrame(container, text="Kontakt-E-Mails", padding=12)
+        self.contacts_frame = ttk.LabelFrame(
+            container, text="E-Mail-Spalten für Drafts", padding=12
+        )
         self.contacts_frame.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
         self.contacts_inner = self._create_scrollable_section(self.contacts_frame)
 
@@ -208,35 +210,64 @@ class ExcelHelperWindow:
         stored = self.config_store.get_entry(self.selected_excel) if self.selected_excel else None
         stored_columns = set(stored.selected_columns) if stored else None
         stored_emails = set(stored.email_columns) if stored else None
+        detected_emails = set(detect_email_headers(headers))
 
         for idx, header in enumerate(headers):
             if not header:
                 continue
-            var = tk.BooleanVar(value=True if stored_columns is None else header in stored_columns)
+            default_selected = True if stored_columns is None else header in stored_columns
+            var = tk.BooleanVar(value=default_selected)
             check = ttk.Checkbutton(self.columns_inner, text=header, variable=var)
             check.grid(row=idx, column=0, sticky="w", pady=2)
             self.column_vars[header] = var
+            var.trace_add("write", lambda *_args, header=header: self._on_column_toggle(header))
 
-        email_headers = detect_email_headers(headers)
-        if not email_headers:
-            ttk.Label(self.contacts_inner, text="Keine Spalten mit E-Mail-Adressen erkannt.").grid(sticky="w")
-        else:
-            for idx, header in enumerate(email_headers):
-                var = tk.BooleanVar(value=True if stored_emails is None else header in stored_emails)
-                check = ttk.Checkbutton(
-                    self.contacts_inner,
-                    text=header,
-                    variable=var,
-                )
-                check.grid(row=idx, column=0, sticky="w", pady=2)
-                self.email_vars[header] = var
+            email_default = False
+            if stored_emails is None:
+                email_default = header in detected_emails
+            else:
+                email_default = header in stored_emails
+            self.email_vars[header] = tk.BooleanVar(value=email_default)
+
+        self._refresh_email_options()
+
+    def _on_column_toggle(self, header: str) -> None:
+        column_var = self.column_vars.get(header)
+        email_var = self.email_vars.get(header)
+        if column_var is None or email_var is None:
+            return
+        if not column_var.get():
+            email_var.set(False)
+        self._refresh_email_options()
+
+    def _refresh_email_options(self) -> None:
+        for child in self.contacts_inner.winfo_children():
+            child.destroy()
+
+        selected_headers = [header for header, var in self.column_vars.items() if var.get()]
+        if not selected_headers:
+            ttk.Label(self.contacts_inner, text="Bitte wählen Sie zunächst Spalten aus.").grid(sticky="w")
+            return
+
+        for idx, header in enumerate(selected_headers):
+            email_var = self.email_vars.setdefault(header, tk.BooleanVar(value=False))
+            ttk.Checkbutton(self.contacts_inner, text=header, variable=email_var).grid(
+                row=idx,
+                column=0,
+                sticky="w",
+                pady=2,
+            )
 
     def _save_config(self) -> None:
         if not self.selected_excel:
             messagebox.showinfo("Keine Datei", "Bitte wählen Sie zuerst eine Excel-Datei aus.")
             return
         selected_columns = [header for header, var in self.column_vars.items() if var.get()]
-        email_columns = [header for header, var in self.email_vars.items() if var.get()]
+        email_columns = []
+        for header, email_var in self.email_vars.items():
+            column_var = self.column_vars.get(header)
+            if column_var and column_var.get() and email_var.get():
+                email_columns.append(header)
         if not selected_columns:
             messagebox.showwarning("Keine Spalten gewählt", "Bitte wählen Sie mindestens eine Spalte aus.")
             return
