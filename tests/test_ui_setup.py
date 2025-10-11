@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 tkinter = pytest.importorskip("tkinter")
 pytest.importorskip("openpyxl")
+
+from tkinter import messagebox
 
 from openpyxl import Workbook  # type: ignore
 
@@ -17,6 +20,15 @@ from spirit_lookup.excel_helper_config import ExcelHelperConfigStore
 from spirit_lookup.models import SpiritRecord
 from spirit_lookup.providers import BaseDataProvider, RecordNotFoundError
 from spirit_lookup.ui import SpiritLookupApp
+
+
+def _create_root_or_skip() -> tkinter.Tk:
+    try:
+        root = tkinter.Tk()
+    except tkinter.TclError:
+        pytest.skip("Tkinter benötigt eine Display-Umgebung")
+    root.withdraw()
+    return root
 
 
 class DummyProvider(BaseDataProvider):
@@ -59,12 +71,49 @@ def test_setup_tab_restores_last_excel_selection(tmp_path: Path) -> None:
     controller = SpiritLookupController(provider)
     app_config = AppConfig(fixture_path=data_dir / "spirit_fixture.json")
 
-    root = tkinter.Tk()
-    root.withdraw()
+    root = _create_root_or_skip()
     try:
         app = SpiritLookupApp(root, controller, app_config)
         assert app.setup_excel_path == excel_path
         assert app.setup_sheet_var.get() == "Hotels"
         assert app.setup_convert_button["state"] == tkinter.NORMAL
+        assert app.setup_generate_display_button["state"] == tkinter.NORMAL
+    finally:
+        root.destroy()
+
+
+def test_generate_display_config(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    config_path = data_dir / "excel_helper_config.json"
+
+    excel_path = tmp_path / "fixture.xlsx"
+    _create_excel_file(excel_path)
+
+    store = ExcelHelperConfigStore(config_path)
+    store.save_entry(
+        excel_path,
+        ["Spirit Code", "Hotel Name", "Kontakt 1 Email"],
+        ["Kontakt 1 Email"],
+    )
+
+    provider = DummyProvider()
+    controller = SpiritLookupController(provider)
+    app_config = AppConfig(fixture_path=data_dir / "spirit_fixture.json")
+
+    root = _create_root_or_skip()
+    try:
+        app = SpiritLookupApp(root, controller, app_config)
+
+        monkeypatch.setattr(messagebox, "showinfo", lambda *args, **kwargs: None)
+        monkeypatch.setattr(messagebox, "showerror", lambda *args, **kwargs: None)
+
+        app._setup_generate_display_config()
+
+        assert app.display_config_path.exists()
+        payload = json.loads(app.display_config_path.read_text(encoding="utf-8"))
+        assert payload["fields"][0]["label"] == "Spirit Code"
+        assert payload["fields"][2]["isEmail"] is True
+        assert len(app.display_definitions) == 3
     finally:
         root.destroy()
