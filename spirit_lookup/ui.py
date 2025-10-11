@@ -196,6 +196,7 @@ class SpiritLookupApp:
 
     def _open_excel_helper(self) -> None:
         open_excel_helper(self.root, self.helper_config_path)
+        self.helper_config_store.reload()
         self._restore_excel_selection(auto_convert=True)
 
     def _restore_excel_selection(self, *, auto_convert: bool = False) -> None:

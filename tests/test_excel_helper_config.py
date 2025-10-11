@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
@@ -78,3 +80,29 @@ def test_config_store_handles_legacy_payload_without_last_used(tmp_path: Path) -
     entries = store.list_entries()
     assert len(entries) == 1
     assert store.get_last_used_path() is None
+
+
+def test_config_store_reload_reflects_external_changes(tmp_path: Path) -> None:
+    config_path = tmp_path / "excel_helper_config.json"
+    store = ExcelHelperConfigStore(config_path)
+
+    first_excel = (tmp_path / "first.xlsx").resolve()
+    second_excel = (tmp_path / "second.xlsx").resolve()
+    first_excel.write_text("dummy")
+    second_excel.write_text("dummy")
+
+    store.save_entry(first_excel, ["Spirit"], [])
+    assert store.get_last_used_path() == first_excel
+
+    other_store = ExcelHelperConfigStore(config_path)
+    other_store.save_entry(second_excel, ["Hotel"], ["Contact"])
+
+    # Without reloading the instance still exposes the stale configuration
+    assert store.get_last_used_path() == first_excel
+
+    store.reload()
+
+    assert store.get_last_used_path() == second_excel
+    reloaded_entry = store.get_entry(second_excel)
+    assert reloaded_entry is not None
+    assert reloaded_entry.selected_columns == ["Hotel"]
