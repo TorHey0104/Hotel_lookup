@@ -83,45 +83,51 @@ def create_workbook(tmp_path: Path) -> Path:
 def test_convert_excel_to_fixture(tmp_path: Path) -> None:
     excel_path = create_workbook(tmp_path)
 
-    fixture, warnings = convert_excel_to_fixture(excel_path)
+    records, warnings = convert_excel_to_fixture(excel_path)
 
     assert warnings == []
-    assert isinstance(fixture, dict)
-
-    config = fixture.get("config", {})
-    assert config.get("fieldMapping", {}).get("spiritCode") == "Spirit Code"
-    assert config.get("fieldMapping", {}).get("displayField") == "Hotel Name"
-
-    records = fixture.get("records", [])
     assert len(records) == 2
 
     first = records[0]
     assert first["spiritCode"] == "ZRH001"
-    assert first["displayValue"] == "Hyatt Regency Zurich"
-    assert first.get("emails", {}) == {"Contact1 Email": "max@hyatt.com"}
-
-    fields = first["fields"]
-    assert fields["Spirit Code"] == "ZRH001"
-    assert fields["Hotel Name"] == "Hyatt Regency Zurich"
-    assert fields["Region"] == "EAME"
-    assert fields["Status"] == "Operating"
-    assert fields["City"] == "Zürich"
-    assert fields["Country"] == "Schweiz"
-    assert fields["Address"] == "Flughafenstrasse 1"
-    assert fields["Contact1 Name"] == "Max Muster"
-    assert fields["Meta.launchYear"] == "2024"
-    assert fields["Meta Notes"] == "Go-Live nach Umbau"
+    assert first["hotelName"] == "Hyatt Regency Zurich"
+    assert first["region"] == "EAME"
+    assert first["status"] == "Operating"
+    assert first["location"] == {
+        "city": "Zürich",
+        "country": "Schweiz",
+        "address": "Flughafenstrasse 1",
+    }
+    assert first["contacts"] == [
+        {
+            "role": "Project Director",
+            "name": "Max Muster",
+            "email": "max@hyatt.com",
+        },
+        {
+            "role": "Design Lead",
+            "name": "Anna Beispiel",
+            "phone": "+41 44 123 45 67",
+        },
+    ]
+    assert first["meta"] == {
+        "launchYear": 2024,
+        "notes": "Go-Live nach Umbau",
+    }
 
     second = records[1]
+    # numerische Codes werden als Strings formatiert
     assert second["spiritCode"] == "1001"
-    assert second["displayValue"] == "Sample Hotel"
-    second_fields = second["fields"]
-    assert second_fields["Spirit Code"] == "1001"
-    assert second_fields["Hotel Name"] == "Sample Hotel"
-    assert second_fields["Region"] == "AMER"
-    assert second_fields["City"] == "Chicago"
-    assert second_fields["Contact1 Name"] == "Chris Cooper"
-    assert second_fields["Meta.launchYear"] == "true"
+    assert second["hotelName"] == "Sample Hotel"
+    assert second["region"] == "AMER"
+    assert "status" not in second
+    assert second.get("location", {}).get("address") is None
+    assert second.get("contacts", []) == [
+        {
+            "name": "Chris Cooper",
+        }
+    ]
+    assert second["meta"] == {"launchYear": True}
 
 
 def test_cli_roundtrip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -135,8 +141,8 @@ def test_cli_roundtrip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> No
     assert "2 Datensätze" in captured.out
 
     data = json.loads(output_path.read_text(encoding="utf-8"))
-    assert isinstance(data, dict)
-    assert len(data.get("records", [])) == 2
+    assert isinstance(data, list)
+    assert len(data) == 2
 
 
 def test_fail_on_warning(tmp_path: Path) -> None:
@@ -147,29 +153,21 @@ def test_fail_on_warning(tmp_path: Path) -> None:
     excel_path = tmp_path / "warning.xlsx"
     workbook.save(excel_path)
 
-    fixture, warnings = convert_excel_to_fixture(excel_path)
-    assert fixture["records"][0]["spiritCode"] == "X001"
-    assert warnings == []
+    records, warnings = convert_excel_to_fixture(excel_path)
+    assert records[0]["spiritCode"] == "X001"
+    assert warnings and "Unknown Column" in warnings[0]
 
 
 def test_write_fixture(tmp_path: Path) -> None:
     target = tmp_path / "fixture.json"
-    fixture = {
-        "config": {
-            "selectedColumns": ["Spirit Code", "Hotel"],
-            "emailColumns": [],
-            "fieldMapping": {"spiritCode": "Spirit Code", "displayField": "Hotel"},
-        },
-        "records": [
-            {
-                "spiritCode": "ABC123",
-                "displayValue": "Test",
-                "fields": {"Spirit Code": "ABC123", "Hotel": "Test"},
-            }
-        ],
-    }
+    records = [
+        {
+            "spiritCode": "ABC123",
+            "hotelName": "Test",
+        }
+    ]
 
-    write_fixture(fixture, target, indent=4)
+    write_fixture(records, target, indent=4)
 
     content = json.loads(target.read_text(encoding="utf-8"))
-    assert content == fixture
+    assert content == records

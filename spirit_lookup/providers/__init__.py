@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import List, Tuple
 
 try:  # optional dependency for SharePoint support
     import requests
@@ -16,119 +15,6 @@ except ModuleNotFoundError:  # pragma: no cover - handled gracefully in code
     requests = None  # type: ignore
 
 from ..models import Contact, SpiritRecord
-
-
-_NORMALIZE_PATTERN = re.compile(r"[^0-9a-z]")
-_EMAIL_SUFFIX_PATTERN = re.compile(r"(?i)[\s_.-]*(e[-\s]?mail|mail)$")
-_META_PREFIX_PATTERN = re.compile(r"(?i)^meta[\s_.-]*")
-
-_FIELD_ALIASES: Dict[str, List[str]] = {
-    "spiritCode": ["spiritcode"],
-    "displayField": [
-        "hotelname",
-        "hotel",
-        "propertyname",
-        "property",
-        "projektname",
-        "projectname",
-        "assetname",
-        "standortname",
-        "locationname",
-        "site",
-    ],
-    "region": ["region"],
-    "status": ["status", "projektstatus", "pipelinestatus"],
-    "city": ["city", "ort", "stadt", "locationcity"],
-    "country": ["country", "land", "locationcountry"],
-    "address": ["address", "adresse", "street", "strasse", "locationaddress"],
-}
-
-_NAME_SUFFIXES = ("name", "kontaktname", "contactname")
-_PHONE_SUFFIXES = ("phone", "telefon", "tel")
-
-
-def _normalize_key(value: str) -> str:
-    return _NORMALIZE_PATTERN.sub("", value.lower())
-
-
-def _looks_like_email(label: str) -> bool:
-    normalized = _normalize_key(label)
-    return "email" in normalized or "mail" in normalized
-
-
-def _derive_field_mapping(columns: Iterable[str], existing: Dict[str, str] | None = None) -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
-    if existing:
-        mapping.update({key: value for key, value in existing.items() if isinstance(key, str) and isinstance(value, str)})
-    used = {value for value in mapping.values()}
-
-    for field, aliases in _FIELD_ALIASES.items():
-        if field in mapping:
-            continue
-        for column in columns:
-            if column in used:
-                continue
-            if _normalize_key(column) in aliases:
-                mapping[field] = column
-                used.add(column)
-                break
-
-    if "displayField" not in mapping:
-        for column in columns:
-            if column in used:
-                continue
-            normalized = _normalize_key(column)
-            if normalized.endswith("phone") or normalized.endswith("telefon"):
-                continue
-            if _looks_like_email(column):
-                continue
-            mapping["displayField"] = column
-            used.add(column)
-            break
-
-    return mapping
-
-
-def _strip_email_suffix(label: str) -> str:
-    return _EMAIL_SUFFIX_PATTERN.sub("", label).strip(" -_:")
-
-
-def _find_related_field(
-    fields: Dict[str, str | None], source: str, suffixes: Iterable[str]
-) -> str | None:
-    base = _normalize_key(_strip_email_suffix(source))
-    if not base:
-        return None
-    for label, value in fields.items():
-        if label == source or not value:
-            continue
-        normalized = _normalize_key(label)
-        if not normalized.startswith(base):
-            continue
-        if any(normalized.endswith(suffix) for suffix in suffixes):
-            return value
-    return None
-
-
-def _derive_meta_key(header: str) -> str:
-    stripped = _META_PREFIX_PATTERN.sub("", header.strip())
-    if not stripped:
-        stripped = "metaField"
-    parts = [part for part in re.split(r"[^0-9A-Za-z]+", stripped) if part]
-    if not parts:
-        return "metaField"
-    first, *rest = parts
-    camel = first[:1].lower() + first[1:]
-    for piece in rest:
-        camel += piece[:1].upper() + piece[1:]
-    return camel
-
-
-def _coerce_optional(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
 
 
 class DataProviderError(RuntimeError):
@@ -168,166 +54,33 @@ class FixtureDataProvider(BaseDataProvider):
         except json.JSONDecodeError as exc:
             raise DataProviderError(f"Fixture-Datei konnte nicht gelesen werden: {exc}") from exc
 
-        if isinstance(raw_data, dict):
-            config = raw_data.get("config", {})
-            raw_records = raw_data.get("records", [])
-        else:
-            config = {}
-            raw_records = raw_data
-
-        if not isinstance(raw_records, list):
-            raise DataProviderError("Fixture besitzt ein unerwartetes Format.")
-
-        selected_columns = [
-            str(column)
-            for column in config.get("selectedColumns", [])
-            if isinstance(column, str)
-        ]
-        email_columns = [
-            str(column) for column in config.get("emailColumns", []) if isinstance(column, str)
-        ]
-        raw_mapping = config.get("fieldMapping")
-        field_mapping = (
-            {str(key): str(value) for key, value in raw_mapping.items() if isinstance(key, str) and isinstance(value, str)}
-            if isinstance(raw_mapping, dict)
-            else {}
-        )
-
         records: List[SpiritRecord] = []
-        for item in raw_records:
-            if not isinstance(item, dict):
-                continue
-            if "fields" in item:
-                record = self._create_record_from_fields(item, selected_columns, field_mapping, email_columns)
-            else:
-                record = self._create_legacy_record(item)
-            records.append(record)
+        for item in raw_data:
+            contacts = [
+                Contact(
+                    role=contact.get("role", ""),
+                    name=contact.get("name", ""),
+                    email=contact.get("email"),
+                    phone=contact.get("phone"),
+                )
+                for contact in item.get("contacts", [])
+            ]
+            location = item.get("location", {}) or {}
+            records.append(
+                SpiritRecord(
+                    spirit_code=item.get("spiritCode", ""),
+                    hotel_name=item.get("hotelName", ""),
+                    region=item.get("region"),
+                    status=item.get("status"),
+                    location_city=location.get("city"),
+                    location_country=location.get("country"),
+                    address=location.get("address"),
+                    contacts=contacts,
+                    meta=item.get("meta", {}),
+                )
+            )
         records.sort(key=lambda r: (r.spirit_code or "", r.hotel_name))
         return records
-
-    def _create_legacy_record(self, item: dict) -> SpiritRecord:
-        contacts = [
-            Contact(
-                role=contact.get("role", ""),
-                name=contact.get("name", ""),
-                email=contact.get("email"),
-                phone=contact.get("phone"),
-            )
-            for contact in item.get("contacts", [])
-            if isinstance(contact, dict)
-        ]
-        location = item.get("location", {}) or {}
-        meta = item.get("meta", {}) if isinstance(item.get("meta"), dict) else {}
-        record = SpiritRecord(
-            spirit_code=str(item.get("spiritCode", "")),
-            hotel_name=str(item.get("hotelName", "")),
-            region=item.get("region"),
-            status=item.get("status"),
-            location_city=location.get("city"),
-            location_country=location.get("country"),
-            address=location.get("address"),
-            contacts=contacts,
-            meta=meta,
-        )
-        field_entries: Dict[str, str | None] = {
-            "Spirit Code": record.spirit_code,
-            "Hotel": record.hotel_name,
-        }
-        if record.region:
-            field_entries["Region"] = record.region
-        if record.status:
-            field_entries["Status"] = record.status
-        if record.location_city:
-            field_entries["City"] = record.location_city
-        if record.location_country:
-            field_entries["Country"] = record.location_country
-        if record.address:
-            field_entries["Address"] = record.address
-        record.fields = field_entries
-        record.field_order = list(field_entries.keys())
-        for contact in contacts:
-            if contact.email:
-                record.email_fields[contact.role or "Kontakt"] = contact.email
-        return record
-
-    def _create_record_from_fields(
-        self,
-        item: dict,
-        selected_columns: List[str],
-        field_mapping: Dict[str, str],
-        email_columns: List[str],
-    ) -> SpiritRecord:
-        raw_fields = item.get("fields", {})
-        if not isinstance(raw_fields, dict):
-            raw_fields = {}
-
-        order: List[str] = list(selected_columns) if selected_columns else list(raw_fields.keys())
-        for column in raw_fields:
-            if column not in order:
-                order.append(column)
-
-        ordered_fields: Dict[str, str | None] = {
-            column: _coerce_optional(raw_fields.get(column)) for column in order
-        }
-
-        mapping = _derive_field_mapping(order, field_mapping)
-        spirit_column = mapping.get("spiritCode")
-        spirit_value = item.get("spiritCode") or ordered_fields.get(spirit_column or "") or ""
-        spirit_code = str(spirit_value)
-
-        display_column = mapping.get("displayField")
-        display_value = item.get("displayValue") or ordered_fields.get(display_column or "")
-        hotel_name = str(display_value) if display_value else spirit_code
-
-        region = _coerce_optional(ordered_fields.get(mapping.get("region", "")))
-        status = _coerce_optional(ordered_fields.get(mapping.get("status", "")))
-        city = _coerce_optional(ordered_fields.get(mapping.get("city", "")))
-        country = _coerce_optional(ordered_fields.get(mapping.get("country", "")))
-        address = _coerce_optional(ordered_fields.get(mapping.get("address", "")))
-
-        emails: Dict[str, str] = {}
-        if isinstance(item.get("emails"), dict):
-            for key, value in item["emails"].items():
-                value_str = _coerce_optional(value)
-                if value_str:
-                    emails[str(key)] = value_str
-        else:
-            for column in email_columns:
-                value_str = _coerce_optional(ordered_fields.get(column))
-                if value_str:
-                    emails[column] = value_str
-
-        contacts: List[Contact] = []
-        for label, email in emails.items():
-            base_label = _strip_email_suffix(label) or label
-            role = _find_related_field(ordered_fields, label, ("role",)) or base_label
-            name = _find_related_field(ordered_fields, label, _NAME_SUFFIXES) or role
-            phone = _find_related_field(ordered_fields, label, _PHONE_SUFFIXES)
-            contacts.append(Contact(role=role, name=name, email=email, phone=phone))
-
-        meta: Dict[str, object] = {}
-        for column, value in ordered_fields.items():
-            if value is None:
-                continue
-            if column in mapping.values() or column in emails:
-                continue
-            if _normalize_key(column).startswith("meta"):
-                meta[_derive_meta_key(column)] = value
-
-        return SpiritRecord(
-            spirit_code=spirit_code,
-            hotel_name=hotel_name,
-            region=region,
-            status=status,
-            location_city=city,
-            location_country=country,
-            address=address,
-            contacts=contacts,
-            meta=meta,
-            fields=ordered_fields,
-            field_order=order,
-            email_fields=emails,
-        )
 
     def _filter_records(self, query: str) -> List[SpiritRecord]:
         if not query:
@@ -339,11 +92,6 @@ class FixtureDataProvider(BaseDataProvider):
             if query_lower in record.spirit_code.lower()
             or query_lower in record.hotel_name.lower()
             or (record.location_city and query_lower in record.location_city.lower())
-            or any(
-                value and query_lower in value.lower()
-                for value in record.fields.values()
-                if value
-            )
         ]
         return results
 

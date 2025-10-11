@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 
 @dataclass(slots=True)
@@ -24,10 +24,7 @@ class SpiritRecord:
     location_country: Optional[str] = None
     address: Optional[str] = None
     contacts: List[Contact] = field(default_factory=list)
-    meta: Dict[str, object] = field(default_factory=dict)
-    fields: Dict[str, Optional[str]] = field(default_factory=dict)
-    field_order: List[str] = field(default_factory=list)
-    email_fields: Dict[str, str] = field(default_factory=dict)
+    meta: dict[str, str | int | float | bool] = field(default_factory=dict)
 
     def display_label(self) -> str:
         """Return a label for dropdown entries."""
