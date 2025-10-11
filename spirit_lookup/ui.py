@@ -45,7 +45,7 @@ class SpiritLookupApp:
         self.config = config
         self.helper_config_path = config.fixture_path.parent / "excel_helper_config.json"
         self.helper_config_store = ExcelHelperConfigStore(self.helper_config_path)
-        self.display_config_path = config.fixture_path.parent / "display_config.json"
+        self.display_config_path = config.fixture_path.parent / "display.json"
         self.display_config = DisplayConfig(self.display_config_path)
         self.display_definitions: list[DisplayFieldDefinition] = []
 
