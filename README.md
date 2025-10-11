@@ -70,7 +70,7 @@ Die Datei `data/spirit_fixture.json` enthält drei Beispiel-Hotels (ZRH001, LON1
 
 ### Excel-Helfer
 
-Über den Button **„Excel Helper“** in der Spirit-Lookup-Anwendung lässt sich eine grafische Oberfläche öffnen, in der die gewünschte Excel-Datei ausgewählt und relevante Spalten markiert werden können. Die Auswahl wird als JSON-Konfiguration (`data/excel_helper_config.json`) gespeichert, automatisch wieder geladen und kann über die Auswahlliste im Dialog jederzeit erneut geöffnet werden. Die zuletzt konfigurierte Datei wird im Setup-Tab automatisch vorausgewählt und – nach dem Schließen des Helpers – direkt für den Import verwendet. Nach dem Speichern weist der Dialog auf das Zielverzeichnis hin; nutzen Sie anschließend das Skript `tools/excel_to_fixture.py`, um auf Basis derselben Excel-Datei eine JSON-Fixture zu erzeugen. Für die Anzeige im Tab **„Hotel Suche“** erstellt das neue Skript `tools/excel_to_display.py` eine `display.json`, die alle ausgewählten Spalten (inklusive ihrer E-Mail-Markierungen) enthält.
+Über den Button **„Excel Helper“** in der Spirit-Lookup-Anwendung lässt sich weiterhin eine grafische Oberfläche öffnen, in der die gewünschte Excel-Datei ausgewählt und relevante Spalten markiert werden können. Die Auswahl wird als JSON-Konfiguration (`data/excel_helper_config.json`) gespeichert, automatisch wieder geladen und kann über die Auswahlliste im Dialog jederzeit erneut geöffnet werden. Im Setup-Tab genügt es inzwischen, eine Excel-Datei auszuwählen, **„Excel einlesen“** zu starten und anschließend **„Automatisch übernehmen“** zu drücken: Die Anwendung konvertiert das komplette Arbeitsblatt in die Fixture (`data/spirit_fixture.json`), erzeugt eine passende `display.json` mit allen Spalten (inklusive E-Mail-Erkennung) und lädt die Daten unmittelbar in den Tab **„HotelSuche“**.
 
 Wer lieber auf der Kommandozeile arbeitet, kann weiterhin das Skript `tools/excel_to_fixture.py` nutzen:
 
@@ -84,7 +84,7 @@ Unterstützte Spaltenüberschriften (Groß-/Kleinschreibung egal, Leerzeichen er
 |----------------|-------------------|----------|------------|
 | `Spirit Code`, `Hotel Name` | `Region`, `Status`, `City`, `Country`, `Address` | `Contact1 Role`, `Contact1 Name`, `Contact1 Email`, `Contact1 Phone` (für weitere Kontakte `Contact2 …`, `Contact3 …` usw.) | Spalten, die mit `Meta` beginnen, z. B. `Meta.launchYear` oder `Meta Notes` |
 
-Das Skript liest standardmäßig das erste Tabellenblatt, unterstützt die Option `--sheet` zur Auswahl eines anderen Blatts und warnt, falls Spalten nicht zugeordnet werden konnten. Das Resultat lässt sich direkt als Fixture-Datei verwenden, indem `SPIRIT_FIXTURE_PATH` auf den erzeugten JSON-Pfad zeigt.
+Das Skript liest standardmäßig das erste Tabellenblatt, unterstützt die Option `--sheet` zur Auswahl eines anderen Blatts und übernimmt nicht zugeordnete Spalten automatisch als Meta-Felder (keine Warnungen erforderlich). Das Resultat lässt sich direkt als Fixture-Datei verwenden, indem `SPIRIT_FIXTURE_PATH` auf den erzeugten JSON-Pfad zeigt.
 
 ## Troubleshooting
 

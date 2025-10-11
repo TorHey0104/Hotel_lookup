@@ -82,6 +82,11 @@ class FixtureDataProvider(BaseDataProvider):
         records.sort(key=lambda r: (r.spirit_code or "", r.hotel_name))
         return records
 
+    def reload(self) -> None:
+        """Reload records from the current fixture file."""
+
+        self._records = self._load_fixture()
+
     def _filter_records(self, query: str) -> List[SpiritRecord]:
         if not query:
             return list(self._records)

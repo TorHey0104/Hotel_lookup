@@ -15,7 +15,7 @@ from .config import AppConfig
 from .controller import LookupResult, SpiritLookupController
 from .display_config import DisplayConfig, DisplayFieldDefinition
 from .excel_helper import open_excel_helper
-from .excel_helper_config import ExcelHelperConfigStore, normalize_header
+from .excel_helper_config import ExcelHelperConfigStore, detect_email_headers, normalize_header
 from .mail import MailClientError, open_mail_client
 from .models import SpiritRecord
 from .providers import DataProviderError, RecordNotFoundError
@@ -63,6 +63,7 @@ class SpiritLookupApp:
         self.setup_sheet_var = tk.StringVar()
         self.setup_warning_var = tk.StringVar()
         self.setup_records: list[dict[str, object]] = []
+        self.setup_headers: list[str] = []
         self._excel_tool_module: ModuleType | None = None
         self._email_check_vars: list[tk.BooleanVar] = []
 
@@ -168,7 +169,7 @@ class SpiritLookupApp:
 
         action_frame = ttk.Frame(setup_frame)
         action_frame.grid(row=6, column=0, sticky="we", pady=(12, 0))
-        action_frame.columnconfigure(3, weight=1)
+        action_frame.columnconfigure(4, weight=1)
         self.setup_convert_button = ttk.Button(
             action_frame,
             text="Excel einlesen",
@@ -190,6 +191,13 @@ class SpiritLookupApp:
             state=tk.DISABLED,
         )
         self.setup_generate_display_button.grid(row=0, column=2, sticky="w", padx=(12, 0))
+        self.setup_apply_button = ttk.Button(
+            action_frame,
+            text="Automatisch übernehmen",
+            command=self._setup_apply_fixture,
+            state=tk.DISABLED,
+        )
+        self.setup_apply_button.grid(row=0, column=3, sticky="w", padx=(12, 0))
 
         self.setup_warning_label = ttk.Label(
             setup_frame,
@@ -243,6 +251,8 @@ class SpiritLookupApp:
 
     def _restore_excel_selection(self, *, auto_convert: bool = False) -> None:
         last_used = self.helper_config_store.get_last_used_path()
+        self.setup_apply_button.configure(state=tk.DISABLED)
+        self.setup_headers = []
         if not last_used:
             self.setup_excel_path = None
             self._update_display_button_state()
@@ -260,6 +270,7 @@ class SpiritLookupApp:
             self.setup_sheet_var.set("")
             self.setup_convert_button.configure(state=tk.DISABLED)
             self.setup_save_button.configure(state=tk.DISABLED)
+            self.setup_apply_button.configure(state=tk.DISABLED)
             pretty = self.helper_config_store.to_pretty_json(last_used)
             self._set_setup_preview(pretty)
             self.setup_warning_var.set(
@@ -273,6 +284,7 @@ class SpiritLookupApp:
             self.setup_warning_var.set(str(exc))
             self.setup_convert_button.configure(state=tk.DISABLED)
             self.setup_save_button.configure(state=tk.DISABLED)
+            self.setup_apply_button.configure(state=tk.DISABLED)
             pretty = self.helper_config_store.to_pretty_json(last_used)
             self._set_setup_preview(pretty if pretty != "{}" else "[]")
             self._update_display_button_state()
@@ -281,6 +293,7 @@ class SpiritLookupApp:
             self.setup_warning_var.set(str(exc))
             self.setup_convert_button.configure(state=tk.DISABLED)
             self.setup_save_button.configure(state=tk.DISABLED)
+            self.setup_apply_button.configure(state=tk.DISABLED)
             pretty = self.helper_config_store.to_pretty_json(last_used)
             self._set_setup_preview(pretty if pretty != "{}" else "[]")
             self._update_display_button_state()
@@ -294,6 +307,7 @@ class SpiritLookupApp:
             self.setup_sheet_var.set(sheet_names[0])
         self.setup_convert_button.configure(state=tk.NORMAL)
         self.setup_save_button.configure(state=tk.DISABLED)
+        self.setup_apply_button.configure(state=tk.DISABLED)
         self.setup_records = []
         pretty_config = self.helper_config_store.to_pretty_json(last_used)
         if pretty_config != "{}":
@@ -339,6 +353,34 @@ class SpiritLookupApp:
             raise ValueError("Die Arbeitsmappe enthält keine Arbeitsblätter.")
         return sheet_names
 
+    def _read_headers(self, excel_path: Path, *, sheet_name: str | None = None) -> List[str]:
+        try:
+            from openpyxl import load_workbook  # type: ignore
+        except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+            raise ModuleNotFoundError(
+                "Für den Excel-Import wird 'openpyxl' benötigt. Installieren Sie das Paket über `pip install openpyxl`."
+            ) from exc
+        try:
+            workbook = load_workbook(excel_path, data_only=True, read_only=True)
+        except Exception as exc:
+            raise ValueError(f"Die Excel-Datei '{excel_path}' konnte nicht geöffnet werden: {exc}") from exc
+        try:
+            if sheet_name:
+                if sheet_name not in workbook.sheetnames:
+                    raise ValueError(
+                        f"Arbeitsblatt '{sheet_name}' existiert nicht. Verfügbare Blätter: {', '.join(workbook.sheetnames)}"
+                    )
+                worksheet = workbook[sheet_name]
+            else:
+                worksheet = workbook.active
+            first_row = next(worksheet.iter_rows(values_only=True), None)
+            if not first_row:
+                return []
+            headers = [str(cell).strip() if cell is not None else "" for cell in first_row]
+            return headers
+        finally:
+            workbook.close()
+
     def _setup_choose_excel(self) -> None:
         file_path = filedialog.askopenfilename(
             parent=self.root,
@@ -367,7 +409,9 @@ class SpiritLookupApp:
         self.setup_sheet_var.set(sheet_names[0])
         self.setup_convert_button.configure(state=tk.NORMAL)
         self.setup_save_button.configure(state=tk.DISABLED)
+        self.setup_apply_button.configure(state=tk.DISABLED)
         self.setup_records = []
+        self.setup_headers = []
         self.setup_warning_var.set("Noch keine Konvertierung durchgeführt.")
         self._set_setup_preview("[]")
         self._update_display_button_state()
@@ -381,6 +425,20 @@ class SpiritLookupApp:
             return
         sheet_name_value = self.setup_sheet_var.get().strip() or None
         try:
+            self.setup_headers = self._read_headers(
+                self.setup_excel_path,
+                sheet_name=sheet_name_value,
+            )
+        except (ModuleNotFoundError, ValueError) as exc:
+            messagebox.showerror("Konvertierung fehlgeschlagen", str(exc))
+            self.setup_records = []
+            self.setup_headers = []
+            self.setup_save_button.configure(state=tk.DISABLED)
+            self.setup_apply_button.configure(state=tk.DISABLED)
+            self.setup_warning_var.set("Konvertierung fehlgeschlagen.")
+            self._set_setup_preview("[]")
+            return
+        try:
             records, warnings = excel_tool.convert_excel_to_fixture(
                 self.setup_excel_path,
                 sheet_name=sheet_name_value,
@@ -388,21 +446,36 @@ class SpiritLookupApp:
         except ValueError as exc:
             messagebox.showerror("Konvertierung fehlgeschlagen", str(exc))
             self.setup_records = []
+            self.setup_headers = []
             self.setup_save_button.configure(state=tk.DISABLED)
+            self.setup_apply_button.configure(state=tk.DISABLED)
             self.setup_warning_var.set("Konvertierung fehlgeschlagen.")
             self._set_setup_preview("[]")
             return
 
         self.setup_records = list(records)
-        pretty = json.dumps(self.setup_records, indent=2, ensure_ascii=False)
-        self._set_setup_preview(pretty)
+        record_count = len(self.setup_records)
+        if record_count:
+            pretty = json.dumps(self.setup_records, indent=2, ensure_ascii=False)
+            self._set_setup_preview(pretty)
+        else:
+            self._set_setup_preview("[]")
         if warnings:
             warning_text = "Warnungen:\n" + "\n".join(f"• {warning}" for warning in warnings)
             self.setup_warning_var.set(warning_text)
+        elif record_count:
+            self.setup_warning_var.set(
+                "Konvertierung erfolgreich. Nutzen Sie 'JSON speichern' oder 'Automatisch übernehmen'."
+            )
         else:
-            self.setup_warning_var.set("Keine Warnungen.")
-        self.setup_save_button.configure(state=tk.NORMAL)
-        self._update_status(f"{len(self.setup_records)} Datensätze vorbereitet.")
+            self.setup_warning_var.set("Keine Daten gefunden.")
+        state = tk.NORMAL if record_count else tk.DISABLED
+        self.setup_save_button.configure(state=state)
+        self.setup_apply_button.configure(state=state)
+        if record_count:
+            self._update_status(f"{record_count} Datensätze vorbereitet.")
+        else:
+            self._update_status("Keine Daten gefunden.")
 
     def _setup_save_json(self) -> None:
         if not self.setup_records:
@@ -464,6 +537,96 @@ class SpiritLookupApp:
         messagebox.showinfo(
             "Anzeige-JSON gespeichert",
             f"Die Anzeige-Konfiguration wurde unter '{self.display_config_path}' gespeichert.",
+        )
+
+    def _build_display_definitions_from_headers(self, headers: List[str]) -> List[DisplayFieldDefinition]:
+        seen: set[str] = set()
+        email_candidates = {normalize_header(item) for item in detect_email_headers(headers)}
+        definitions: List[DisplayFieldDefinition] = []
+        for header in headers:
+            label = header.strip()
+            if not label:
+                continue
+            normalized = normalize_header(label)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            is_email = normalized in email_candidates
+            definitions.append(DisplayFieldDefinition(label=label, is_email=is_email))
+        return definitions
+
+    def _reload_fixture_provider(self) -> None:
+        provider = self.controller.provider
+        reload_method = getattr(provider, "reload", None)
+        if callable(reload_method):
+            try:
+                reload_method()
+            except Exception as exc:  # pragma: no cover - defensive safeguard
+                messagebox.showwarning(
+                    "Aktualisierung unvollständig",
+                    f"Fixture gespeichert, aber Daten konnten nicht neu geladen werden: {exc}",
+                )
+                return
+        try:
+            result = self.controller.list_records(page=0)
+        except DataProviderError as exc:
+            messagebox.showwarning("Aktualisierung unvollständig", str(exc))
+            return
+        self._apply_lookup_result(result)
+        if result.records:
+            self._update_status(f"{len(self.cached_records)} Hotels geladen.")
+        else:
+            self._update_status("Keine Daten verfügbar. Nutzen Sie ggf. den Fixture-Modus.")
+
+    def _setup_apply_fixture(self) -> None:
+        if not self.setup_excel_path:
+            messagebox.showinfo("Keine Datei", "Bitte wählen Sie zuerst eine Excel-Datei aus.")
+            return
+        if not self.setup_records:
+            self._setup_convert_excel()
+            if not self.setup_records:
+                return
+        excel_tool = self._get_excel_tool_module()
+        if excel_tool is None:
+            return
+        try:
+            excel_tool.write_fixture(self.setup_records, self.config.fixture_path, indent=2)
+        except OSError as exc:
+            messagebox.showerror("Speichern fehlgeschlagen", f"Die Datei konnte nicht gespeichert werden: {exc}")
+            return
+
+        if not self.setup_headers:
+            try:
+                self.setup_headers = self._read_headers(
+                    self.setup_excel_path,
+                    sheet_name=self.setup_sheet_var.get().strip() or None,
+                )
+            except (ModuleNotFoundError, ValueError):
+                self.setup_headers = []
+
+        definitions = self._build_display_definitions_from_headers(self.setup_headers)
+        try:
+            self.display_config.save(definitions)
+        except OSError as exc:
+            messagebox.showerror(
+                "Speichern fehlgeschlagen",
+                f"Die Anzeige-Konfiguration konnte nicht gespeichert werden: {exc}",
+            )
+            return
+
+        self.display_definitions = list(definitions)
+        self._reload_fixture_provider()
+
+        self.setup_warning_var.set(
+            "Fixture gespeichert und Anzeige aktualisiert. Die Hotels stehen nun in der Suche zur Verfügung."
+        )
+        self.setup_apply_button.configure(state=tk.NORMAL)
+        messagebox.showinfo(
+            "Übernommen",
+            (
+                f"Die JSON-Datei wurde unter '{self.config.fixture_path}' gespeichert.\n"
+                "Die Anzeige-Konfiguration wurde automatisch aktualisiert."
+            ),
         )
 
     def _default_display_definitions(self, record: SpiritRecord) -> List[DisplayFieldDefinition]:

@@ -145,7 +145,7 @@ def test_cli_roundtrip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> No
     assert len(data) == 2
 
 
-def test_fail_on_warning(tmp_path: Path) -> None:
+def test_extra_columns_are_preserved(tmp_path: Path) -> None:
     workbook = Workbook()
     sheet = workbook.active
     sheet.append(["Spirit Code", "Hotel Name", "Unknown Column"])
@@ -155,7 +155,8 @@ def test_fail_on_warning(tmp_path: Path) -> None:
 
     records, warnings = convert_excel_to_fixture(excel_path)
     assert records[0]["spiritCode"] == "X001"
-    assert warnings and "Unknown Column" in warnings[0]
+    assert warnings == []
+    assert records[0]["meta"] == {"unknownColumn": "unexpected"}
 
 
 def test_write_fixture(tmp_path: Path) -> None:
