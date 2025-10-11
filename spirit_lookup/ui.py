@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import tkinter as tk
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from tkinter import filedialog, messagebox, ttk
@@ -11,11 +13,27 @@ from typing import List
 
 from .config import AppConfig
 from .controller import LookupResult, SpiritLookupController
+from .display_config import DisplayConfig, DisplayFieldDefinition
 from .excel_helper import open_excel_helper
-from .excel_helper_config import ExcelHelperConfigStore
+from .excel_helper_config import ExcelHelperConfigStore, normalize_header
 from .mail import MailClientError, open_mail_client
 from .models import SpiritRecord
 from .providers import DataProviderError, RecordNotFoundError
+
+
+@dataclass
+class RenderedField:
+    """Represents a value that should be rendered in the detail dialog."""
+
+    label: str
+    value: str | None
+    is_email: bool
+
+
+_CONTACT_LABEL_PATTERN = re.compile(
+    r"^(?:contact|kontakt)(?P<index>\d+)(?P<field>role|rolle|name|email|phone|telefon)$"
+)
+_META_PREFIX_PATTERN = re.compile(r"^meta[\s_.-]*", re.IGNORECASE)
 
 
 class SpiritLookupApp:
@@ -27,6 +45,9 @@ class SpiritLookupApp:
         self.config = config
         self.helper_config_path = config.fixture_path.parent / "excel_helper_config.json"
         self.helper_config_store = ExcelHelperConfigStore(self.helper_config_path)
+        self.display_config_path = config.fixture_path.parent / "display_config.json"
+        self.display_config = DisplayConfig(self.display_config_path)
+        self.display_definitions: list[DisplayFieldDefinition] = []
 
         self.current_query: str = ""
         self.current_page: int = 0
@@ -43,7 +64,9 @@ class SpiritLookupApp:
         self.setup_warning_var = tk.StringVar()
         self.setup_records: list[dict[str, object]] = []
         self._excel_tool_module: ModuleType | None = None
+        self._email_check_vars: list[tk.BooleanVar] = []
 
+        self._load_display_config()
         self._build_ui()
         self._restore_excel_selection()
         self._load_initial()
@@ -145,7 +168,7 @@ class SpiritLookupApp:
 
         action_frame = ttk.Frame(setup_frame)
         action_frame.grid(row=6, column=0, sticky="we", pady=(12, 0))
-        action_frame.columnconfigure(2, weight=1)
+        action_frame.columnconfigure(3, weight=1)
         self.setup_convert_button = ttk.Button(
             action_frame,
             text="Excel einlesen",
@@ -160,6 +183,13 @@ class SpiritLookupApp:
             state=tk.DISABLED,
         )
         self.setup_save_button.grid(row=0, column=1, sticky="w", padx=(12, 0))
+        self.setup_generate_display_button = ttk.Button(
+            action_frame,
+            text="Anzeige-JSON speichern",
+            command=self._setup_generate_display_config,
+            state=tk.DISABLED,
+        )
+        self.setup_generate_display_button.grid(row=0, column=2, sticky="w", padx=(12, 0))
 
         self.setup_warning_label = ttk.Label(
             setup_frame,
@@ -194,6 +224,18 @@ class SpiritLookupApp:
     def _update_status(self, text: str) -> None:
         self.status_var.set(text)
 
+    def _load_display_config(self) -> None:
+        self.display_config.load()
+        self.display_definitions = list(self.display_config.fields)
+
+    def _update_display_button_state(self) -> None:
+        if not hasattr(self, "setup_generate_display_button"):
+            return
+        entry_path = self.setup_excel_path or self.helper_config_store.get_last_used_path()
+        entry = self.helper_config_store.get_entry(entry_path) if entry_path else None
+        state = tk.NORMAL if entry and entry.selected_columns else tk.DISABLED
+        self.setup_generate_display_button.configure(state=state)
+
     def _open_excel_helper(self) -> None:
         open_excel_helper(self.root, self.helper_config_path)
         self.helper_config_store.reload()
@@ -202,9 +244,13 @@ class SpiritLookupApp:
     def _restore_excel_selection(self, *, auto_convert: bool = False) -> None:
         last_used = self.helper_config_store.get_last_used_path()
         if not last_used:
+            self.setup_excel_path = None
+            self._update_display_button_state()
             return
         entry = self.helper_config_store.get_entry(last_used)
         if not entry:
+            self.setup_excel_path = None
+            self._update_display_button_state()
             return
         if not last_used.exists():
             self.setup_excel_path = None
@@ -219,6 +265,7 @@ class SpiritLookupApp:
             self.setup_warning_var.set(
                 "Die konfigurierte Excel-Datei wurde nicht gefunden. Bitte wählen Sie eine Datei aus."
             )
+            self._update_display_button_state()
             return
         try:
             sheet_names = self._load_sheet_names(last_used)
@@ -228,6 +275,7 @@ class SpiritLookupApp:
             self.setup_save_button.configure(state=tk.DISABLED)
             pretty = self.helper_config_store.to_pretty_json(last_used)
             self._set_setup_preview(pretty if pretty != "{}" else "[]")
+            self._update_display_button_state()
             return
         except ValueError as exc:
             self.setup_warning_var.set(str(exc))
@@ -235,6 +283,7 @@ class SpiritLookupApp:
             self.setup_save_button.configure(state=tk.DISABLED)
             pretty = self.helper_config_store.to_pretty_json(last_used)
             self._set_setup_preview(pretty if pretty != "{}" else "[]")
+            self._update_display_button_state()
             return
 
         self.setup_excel_path = last_used
@@ -252,6 +301,7 @@ class SpiritLookupApp:
         else:
             self._set_setup_preview("[]")
         self.setup_warning_var.set("Konfiguration geladen. Bitte Excel einlesen.")
+        self._update_display_button_state()
         if auto_convert and sheet_names:
             self.root.after(50, self._setup_convert_excel)
 
@@ -320,6 +370,7 @@ class SpiritLookupApp:
         self.setup_records = []
         self.setup_warning_var.set("Noch keine Konvertierung durchgeführt.")
         self._set_setup_preview("[]")
+        self._update_display_button_state()
 
     def _setup_convert_excel(self) -> None:
         if not self.setup_excel_path:
@@ -380,6 +431,148 @@ class SpiritLookupApp:
             return
         self._update_status(f"JSON nach '{output_path}' gespeichert.")
         messagebox.showinfo("Gespeichert", f"Die JSON-Datei wurde unter '{output_path}' gespeichert.")
+
+    def _setup_generate_display_config(self) -> None:
+        entry_path = self.setup_excel_path or self.helper_config_store.get_last_used_path()
+        if not entry_path:
+            messagebox.showinfo(
+                "Keine Konfiguration",
+                "Es ist keine gespeicherte Excel-Konfiguration vorhanden. Bitte wählen Sie zunächst eine Datei aus.",
+            )
+            return
+        entry = self.helper_config_store.get_entry(entry_path)
+        if not entry or not entry.selected_columns:
+            messagebox.showinfo(
+                "Keine Spalten",
+                "Es wurden keine Spalten gespeichert. Bitte nutzen Sie zuerst den Excel Helper, um Spalten auszuwählen.",
+            )
+            self._update_display_button_state()
+            return
+
+        definitions = [
+            DisplayFieldDefinition(label=column, is_email=column in entry.email_columns)
+            for column in entry.selected_columns
+        ]
+        try:
+            self.display_config.save(definitions)
+        except OSError as exc:
+            messagebox.showerror("Speichern fehlgeschlagen", f"Die Anzeige-Konfiguration konnte nicht gespeichert werden: {exc}")
+            return
+
+        self.display_definitions = list(self.display_config.fields)
+        self._update_status(f"Anzeige-Konfiguration nach '{self.display_config_path}' gespeichert.")
+        messagebox.showinfo(
+            "Anzeige-JSON gespeichert",
+            f"Die Anzeige-Konfiguration wurde unter '{self.display_config_path}' gespeichert.",
+        )
+
+    def _default_display_definitions(self, record: SpiritRecord) -> List[DisplayFieldDefinition]:
+        definitions = [
+            DisplayFieldDefinition("Spirit Code"),
+            DisplayFieldDefinition("Hotel Name"),
+            DisplayFieldDefinition("Region"),
+            DisplayFieldDefinition("Status"),
+            DisplayFieldDefinition("City"),
+            DisplayFieldDefinition("Country"),
+            DisplayFieldDefinition("Address"),
+        ]
+        for index, _contact in enumerate(record.contacts, start=1):
+            prefix = f"Kontakt {index}"
+            definitions.extend(
+                [
+                    DisplayFieldDefinition(f"{prefix} Role"),
+                    DisplayFieldDefinition(f"{prefix} Name"),
+                    DisplayFieldDefinition(f"{prefix} Email", is_email=True),
+                    DisplayFieldDefinition(f"{prefix} Phone"),
+                ]
+            )
+        for key in sorted(record.meta.keys()):
+            definitions.append(DisplayFieldDefinition(key))
+        return definitions
+
+    def _build_display_fields(self, record: SpiritRecord) -> List[RenderedField]:
+        definitions = self.display_definitions or self._default_display_definitions(record)
+        fields: List[RenderedField] = []
+        for definition in definitions:
+            raw_value = self._resolve_record_value(record, definition.label)
+            formatted = self._format_field_value(raw_value)
+            fields.append(RenderedField(label=definition.label, value=formatted, is_email=definition.is_email))
+        return fields
+
+    def _resolve_record_value(self, record: SpiritRecord, label: str) -> object | None:
+        normalized = normalize_header(label)
+        if not normalized:
+            return None
+        base_map = {
+            "spiritcode": record.spirit_code,
+            "hotelname": record.hotel_name,
+            "hotel": record.hotel_name,
+            "region": record.region,
+            "status": record.status,
+            "city": record.location_city,
+            "locationcity": record.location_city,
+            "country": record.location_country,
+            "locationcountry": record.location_country,
+            "address": record.address,
+            "locationaddress": record.address,
+        }
+        if normalized in base_map:
+            return base_map[normalized]
+
+        contact_match = _CONTACT_LABEL_PATTERN.match(normalized)
+        if contact_match:
+            index = int(contact_match.group("index")) - 1
+            field = contact_match.group("field")
+            field_map = {
+                "role": "role",
+                "rolle": "role",
+                "name": "name",
+                "email": "email",
+                "phone": "phone",
+                "telefon": "phone",
+            }
+            attr = field_map.get(field)
+            if attr and 0 <= index < len(record.contacts):
+                return getattr(record.contacts[index], attr)
+
+        meta_value = self._lookup_meta_value(record, label, normalized)
+        if meta_value is not None:
+            return meta_value
+
+        return None
+
+    def _lookup_meta_value(self, record: SpiritRecord, label: str, normalized: str) -> object | None:
+        if not record.meta:
+            return None
+        meta_key = self._derive_meta_key(label)
+        if meta_key in record.meta:
+            return record.meta[meta_key]
+        for key, value in record.meta.items():
+            if normalize_header(key) == normalized:
+                return value
+        if label in record.meta:
+            return record.meta[label]
+        return None
+
+    def _derive_meta_key(self, label: str) -> str:
+        stripped = _META_PREFIX_PATTERN.sub("", label.strip())
+        if not stripped:
+            stripped = "metaField"
+        parts = [part for part in re.split(r"[^0-9A-Za-z]+", stripped) if part]
+        if not parts:
+            return "metaField"
+        first, *rest = parts
+        camel = first[:1].lower() + first[1:]
+        for piece in rest:
+            camel += piece[:1].upper() + piece[1:]
+        return camel
+
+    def _format_field_value(self, value: object | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return "Ja" if value else "Nein"
+        return str(value)
 
     def _load_initial(self) -> None:
         try:
@@ -487,52 +680,40 @@ class SpiritLookupApp:
         info_frame = ttk.Frame(dialog, padding="16")
         info_frame.grid(row=1, column=0, sticky="nsew")
         info_frame.columnconfigure(1, weight=1)
+        info_frame.columnconfigure(3, weight=0)
 
-        entries = [
-            ("Spirit Code", record.spirit_code),
-            ("Hotel", record.hotel_name),
-            ("Region", record.region or "–"),
-            ("Status", record.status or "–"),
-            ("Ort", ", ".join(filter(None, [record.location_city, record.location_country])) or "–"),
-            ("Adresse", record.address or "–"),
-        ]
-        for idx, (label, value) in enumerate(entries):
-            ttk.Label(info_frame, text=f"{label}:", font=("Segoe UI", 10, "bold"), anchor="w").grid(
-                row=idx, column=0, sticky="w", pady=2
-            )
-            ttk.Label(info_frame, text=value, anchor="w", wraplength=360).grid(
-                row=idx, column=1, sticky="w", pady=2
-            )
-
-        contact_frame = ttk.LabelFrame(dialog, text="Kontaktinformationen", padding="16")
-        contact_frame.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 16))
-        contact_frame.columnconfigure(1, weight=1)
-
-        if record.contacts:
-            for idx, contact in enumerate(record.contacts):
-                ttk.Label(contact_frame, text=contact.role or "Kontakt", font=("Segoe UI", 10, "bold")).grid(
-                    row=idx * 2, column=0, sticky="nw"
-                )
-                ttk.Label(contact_frame, text=contact.name or "–").grid(row=idx * 2, column=1, sticky="w")
-                buttons_frame = ttk.Frame(contact_frame)
-                buttons_frame.grid(row=idx * 2 + 1, column=0, columnspan=2, sticky="w", pady=(0, 8))
-                if contact.email:
-                    ttk.Button(
-                        buttons_frame,
-                        text=f"E-Mail kopieren ({contact.email})",
-                        command=lambda value=contact.email: self._copy_to_clipboard(value),
-                    ).pack(side="left", padx=(0, 8))
-                if contact.phone:
-                    ttk.Button(
-                        buttons_frame,
-                        text=f"Telefon kopieren ({contact.phone})",
-                        command=lambda value=contact.phone: self._copy_to_clipboard(value),
-                    ).pack(side="left", padx=(0, 8))
+        fields = self._build_display_fields(record)
+        self._email_check_vars = []
+        if not fields:
+            ttk.Label(info_frame, text="Keine Felder definiert.").grid(row=0, column=0, sticky="w")
         else:
-            ttk.Label(contact_frame, text="Keine Kontakte vorhanden.").grid(row=0, column=0, sticky="w")
+            for idx, field in enumerate(fields):
+                label_widget = ttk.Label(
+                    info_frame,
+                    text=f"{field.label}:",
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="w",
+                )
+                label_widget.grid(row=idx, column=0, sticky="w", pady=2)
+                value_text = field.value if field.value not in (None, "") else "–"
+                value_label = ttk.Label(info_frame, text=value_text, anchor="w", wraplength=360)
+                value_label.grid(row=idx, column=1, sticky="w", pady=2)
+
+                column_offset = 2
+                if field.is_email and field.value:
+                    var = tk.BooleanVar(value=False)
+                    self._email_check_vars.append(var)
+                    ttk.Checkbutton(info_frame, variable=var).grid(row=idx, column=2, padx=(8, 0), sticky="w")
+                    column_offset = 3
+                if field.value:
+                    ttk.Button(
+                        info_frame,
+                        text="Kopieren",
+                        command=lambda value=field.value: self._copy_to_clipboard(value),
+                    ).grid(row=idx, column=column_offset, padx=(8, 0), sticky="w")
 
         action_frame = ttk.Frame(dialog, padding="16")
-        action_frame.grid(row=3, column=0, sticky="ew")
+        action_frame.grid(row=2, column=0, sticky="ew")
         action_frame.columnconfigure(2, weight=1)
 
         confirm_var = tk.BooleanVar(value=False)
