@@ -41,7 +41,7 @@ class SpiritLookupApp:
         self.setup_excel_path: Path | None = None
         self.setup_sheet_var = tk.StringVar()
         self.setup_warning_var = tk.StringVar()
-        self.setup_fixture: dict[str, object] | None = None
+        self.setup_records: list[dict[str, object]] = []
         self._excel_tool_module: ModuleType | None = None
 
         self._build_ui()
@@ -185,7 +185,7 @@ class SpiritLookupApp:
             foreground="#555555",
         ).grid(row=9, column=0, sticky="w", pady=(12, 0))
 
-        self._set_setup_preview("{}")
+        self._set_setup_preview("[]")
         self.setup_warning_var.set("")
 
         self.status_label = ttk.Label(container, textvariable=self.status_var, relief=tk.SUNKEN, anchor="w")
@@ -245,12 +245,12 @@ class SpiritLookupApp:
             self.setup_sheet_var.set(sheet_names[0])
         self.setup_convert_button.configure(state=tk.NORMAL)
         self.setup_save_button.configure(state=tk.DISABLED)
-        self.setup_fixture = None
+        self.setup_records = []
         pretty_config = self.helper_config_store.to_pretty_json(last_used)
         if pretty_config != "{}":
             self._set_setup_preview(pretty_config)
         else:
-            self._set_setup_preview("{}")
+            self._set_setup_preview("[]")
         self.setup_warning_var.set("Konfiguration geladen. Bitte Excel einlesen.")
         if auto_convert and sheet_names:
             self.root.after(50, self._setup_convert_excel)
@@ -317,9 +317,9 @@ class SpiritLookupApp:
         self.setup_sheet_var.set(sheet_names[0])
         self.setup_convert_button.configure(state=tk.NORMAL)
         self.setup_save_button.configure(state=tk.DISABLED)
-        self.setup_fixture = None
+        self.setup_records = []
         self.setup_warning_var.set("Noch keine Konvertierung durchgeführt.")
-        self._set_setup_preview("{}")
+        self._set_setup_preview("[]")
 
     def _setup_convert_excel(self) -> None:
         if not self.setup_excel_path:
@@ -330,21 +330,20 @@ class SpiritLookupApp:
             return
         sheet_name_value = self.setup_sheet_var.get().strip() or None
         try:
-            fixture, warnings = excel_tool.convert_excel_to_fixture(
+            records, warnings = excel_tool.convert_excel_to_fixture(
                 self.setup_excel_path,
                 sheet_name=sheet_name_value,
-                config_path=self.helper_config_path,
             )
         except ValueError as exc:
             messagebox.showerror("Konvertierung fehlgeschlagen", str(exc))
-            self.setup_fixture = None
+            self.setup_records = []
             self.setup_save_button.configure(state=tk.DISABLED)
             self.setup_warning_var.set("Konvertierung fehlgeschlagen.")
-            self._set_setup_preview("{}")
+            self._set_setup_preview("[]")
             return
 
-        self.setup_fixture = dict(fixture)
-        pretty = json.dumps(self.setup_fixture, indent=2, ensure_ascii=False)
+        self.setup_records = list(records)
+        pretty = json.dumps(self.setup_records, indent=2, ensure_ascii=False)
         self._set_setup_preview(pretty)
         if warnings:
             warning_text = "Warnungen:\n" + "\n".join(f"• {warning}" for warning in warnings)
@@ -352,11 +351,10 @@ class SpiritLookupApp:
         else:
             self.setup_warning_var.set("Keine Warnungen.")
         self.setup_save_button.configure(state=tk.NORMAL)
-        record_count = len(self.setup_fixture.get("records", [])) if self.setup_fixture else 0
-        self._update_status(f"{record_count} Datensätze vorbereitet.")
+        self._update_status(f"{len(self.setup_records)} Datensätze vorbereitet.")
 
     def _setup_save_json(self) -> None:
-        if not self.setup_fixture:
+        if not self.setup_records:
             messagebox.showinfo("Keine Daten", "Bitte lesen Sie zunächst eine Excel-Datei ein.")
             return
         excel_tool = self._get_excel_tool_module()
@@ -376,7 +374,7 @@ class SpiritLookupApp:
             return
         output_path = Path(file_path)
         try:
-            excel_tool.write_fixture(self.setup_fixture, output_path, indent=2)
+            excel_tool.write_fixture(self.setup_records, output_path, indent=2)
         except OSError as exc:
             messagebox.showerror("Speichern fehlgeschlagen", f"Die Datei konnte nicht gespeichert werden: {exc}")
             return
@@ -490,41 +488,19 @@ class SpiritLookupApp:
         info_frame.grid(row=1, column=0, sticky="nsew")
         info_frame.columnconfigure(1, weight=1)
 
-        seen_labels: set[str] = set()
-
-        def format_value(value: str | None) -> str:
-            if value is None or value == "":
-                return "–"
-            lowered = value.lower()
-            if lowered == "true":
-                return "Ja"
-            if lowered == "false":
-                return "Nein"
-            return value
-
-        dynamic_entries: List[tuple[str, str | None]] = []
-        dynamic_entries.append(("Spirit Code", record.spirit_code))
-        seen_labels.add("Spirit Code")
-
-        field_order = record.field_order or list(record.fields.keys())
-        for field_name in field_order:
-            if not field_name or field_name in seen_labels:
-                continue
-            value = record.fields.get(field_name)
-            dynamic_entries.append((field_name, value))
-            seen_labels.add(field_name)
-
-        for field_name, value in record.fields.items():
-            if not field_name or field_name in seen_labels:
-                continue
-            dynamic_entries.append((field_name, value))
-            seen_labels.add(field_name)
-
-        for idx, (label, raw_value) in enumerate(dynamic_entries):
+        entries = [
+            ("Spirit Code", record.spirit_code),
+            ("Hotel", record.hotel_name),
+            ("Region", record.region or "–"),
+            ("Status", record.status or "–"),
+            ("Ort", ", ".join(filter(None, [record.location_city, record.location_country])) or "–"),
+            ("Adresse", record.address or "–"),
+        ]
+        for idx, (label, value) in enumerate(entries):
             ttk.Label(info_frame, text=f"{label}:", font=("Segoe UI", 10, "bold"), anchor="w").grid(
                 row=idx, column=0, sticky="w", pady=2
             )
-            ttk.Label(info_frame, text=format_value(raw_value), anchor="w", wraplength=360).grid(
+            ttk.Label(info_frame, text=value, anchor="w", wraplength=360).grid(
                 row=idx, column=1, sticky="w", pady=2
             )
 

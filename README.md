@@ -66,7 +66,7 @@ python tools/run_simple_coverage.py
 Die Test-Suite umfasst Unit-, Integrations- und E2E-nahe Szenarien gegen die Fixture. Das Coverage-Skript basiert auf `sys.settrace` und ignoriert optional den SharePoint-spezifischen Teil; die angestrebte Abdeckung liegt bei ≥ 80 % für die Kernmodule.
 ## Mockdaten
 
-Die Datei `data/spirit_fixture.json` enthält drei Beispiel-Hotels (ZRH001, LON123, DXB777). Für lokale Tests können weitere Einträge ergänzt werden. Die Datei besteht aus einem `config`-Block (ausgewählte Spalten, Mail-Spalten und Feld-Zuordnung) sowie einem `records`-Array. Jeder Datensatz speichert die Originalspalten im Feld `fields`, so dass Beschriftungen aus der Excel-Helfer-Konfiguration unverändert in der Oberfläche erscheinen.
+Die Datei `data/spirit_fixture.json` enthält drei Beispiel-Hotels (ZRH001, LON123, DXB777). Für lokale Tests können weitere Einträge ergänzt werden. Die Struktur entspricht dem Interface `SpiritRecord` aus `spirit_lookup/models.py`.
 
 ### Excel-Helfer
 
@@ -78,14 +78,16 @@ Wer lieber auf der Kommandozeile arbeitet, kann weiterhin das Skript `tools/exce
 python tools/excel_to_fixture.py meine_hotels.xlsx data/meine_hotels.json
 ```
 
-Das Skript liest standardmäßig das erste Tabellenblatt, unterstützt die Option `--sheet` zur Auswahl eines anderen Blatts und übernimmt – sofern vorhanden – die Selektion aus `data/excel_helper_config.json`. Pflicht ist lediglich eine Spalte, die auf `Spirit Code` matcht. Weitere Felder (Region, Status, Adresse usw.) werden anhand von Aliasen ermittelt oder bleiben als generische Zusatzfelder im `fields`-Block erhalten. E-Mail-Spalten lassen sich entweder im Excel-Helfer markieren oder werden heuristisch erkannt; dazu passende Namens-, Rollen- und Telefonspalten werden automatisch miteinander verknüpft. Spalten, die mit `Meta` beginnen, landen weiterhin im `meta`-Dictionary der einzelnen `SpiritRecord`-Instanzen.
+Unterstützte Spaltenüberschriften (Groß-/Kleinschreibung egal, Leerzeichen erlaubt):
 
-Das Resultat lässt sich direkt als Fixture-Datei verwenden, indem `SPIRIT_FIXTURE_PATH` auf den erzeugten JSON-Pfad zeigt.
+| Pflichtspalten | Optionale Spalten | Kontakte | Meta-Daten |
+|----------------|-------------------|----------|------------|
+| `Spirit Code`, `Hotel Name` | `Region`, `Status`, `City`, `Country`, `Address` | `Contact1 Role`, `Contact1 Name`, `Contact1 Email`, `Contact1 Phone` (für weitere Kontakte `Contact2 …`, `Contact3 …` usw.) | Spalten, die mit `Meta` beginnen, z. B. `Meta.launchYear` oder `Meta Notes` |
+
+Das Skript liest standardmäßig das erste Tabellenblatt, unterstützt die Option `--sheet` zur Auswahl eines anderen Blatts und warnt, falls Spalten nicht zugeordnet werden konnten. Das Resultat lässt sich direkt als Fixture-Datei verwenden, indem `SPIRIT_FIXTURE_PATH` auf den erzeugten JSON-Pfad zeigt.
 
 ## Troubleshooting
 
-- **Tkinter-Fehler „no display name“**: Die Anwendung benötigt eine aktive grafische Umgebung (`DISPLAY`).
-  In Headless- oder CI-Umgebungen brechen wir daher kontrolliert mit einem Hinweis ab.
-  Installieren Sie bei Bedarf `python3-tk` und starten Sie die Anwendung innerhalb einer X-Session bzw. via `xvfb-run`.
+- **Tkinter-Fehler „no display name“**: Auf Linux muss ggf. `sudo apt-get install python3-tk` oder `xvfb` installiert werden.
 - **SharePoint-Authentifizierung schlägt fehl**: Prüfen Sie Client-ID, Secret und List-ID. Nutzen Sie `DATA_SOURCE=fixture` für lokale/offline Entwicklung.
 - **Mailclient öffnet sich nicht**: Stellen Sie sicher, dass ein Standard-Mailprogramm registriert ist. Andernfalls erscheint eine Fehlermeldung.
