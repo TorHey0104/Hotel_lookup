@@ -11,6 +11,7 @@ def test_fixture_provider_list_and_get(fixture_provider):
     record = fixture_provider.get_record("ZRH001")
     assert record.hotel_name == "Hyatt Regency Zurich"
     assert record.contacts[0].email == "max@hyatt.com"
+    assert record.fields["Primary Contact Email"] == "max@hyatt.com"
 
 
 def test_fixture_provider_filters(fixture_provider):
