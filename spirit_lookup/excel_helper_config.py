@@ -58,7 +58,7 @@ class ExcelHelperConfigStore:
 
     def __init__(self, config_path: Path):
         self.config_path = config_path
-        self._data: Dict[str, Dict[str, List[str]]] = {"files": {}}
+        self._data: Dict[str, object] = {"files": {}, "lastUsedFile": None}
         self._loaded = False
 
     def _ensure_loaded(self) -> None:
@@ -69,34 +69,44 @@ class ExcelHelperConfigStore:
                 raw = json.loads(self.config_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 raw = {}
-            if isinstance(raw, dict) and isinstance(raw.get("files"), dict):
-                files = raw["files"]
-                valid_entries: Dict[str, Dict[str, List[str]]] = {}
-                for key, value in files.items():
-                    if not isinstance(value, dict):
-                        continue
-                    selected = value.get("selectedColumns")
-                    emails = value.get("emailColumns")
-                    if isinstance(selected, list) and isinstance(emails, list):
-                        valid_entries[key] = {
-                            "selectedColumns": [str(item) for item in selected],
-                            "emailColumns": [str(item) for item in emails],
-                        }
-                self._data["files"] = valid_entries
+            if isinstance(raw, dict):
+                files = raw.get("files", {})
+                if isinstance(files, dict):
+                    valid_entries: Dict[str, Dict[str, List[str]]] = {}
+                    for key, value in files.items():
+                        if not isinstance(value, dict):
+                            continue
+                        selected = value.get("selectedColumns")
+                        emails = value.get("emailColumns")
+                        if isinstance(selected, list) and isinstance(emails, list):
+                            valid_entries[key] = {
+                                "selectedColumns": [str(item) for item in selected],
+                                "emailColumns": [str(item) for item in emails],
+                            }
+                    self._data["files"] = valid_entries
+                last_used = raw.get("lastUsedFile")
+                if isinstance(last_used, str):
+                    self._data["lastUsedFile"] = last_used
         self._loaded = True
 
     def load(self) -> Dict[str, Dict[str, List[str]]]:
         """Return the raw configuration dictionary."""
 
         self._ensure_loaded()
-        return self._data["files"].copy()
+        files = self._data.get("files", {})
+        if isinstance(files, dict):
+            return files.copy()  # type: ignore[return-value]
+        return {}
 
     def get_entry(self, excel_path: Path) -> ExcelHelperConfigEntry | None:
         """Retrieve the stored entry for a given Excel path."""
 
         self._ensure_loaded()
         key = str(excel_path.resolve())
-        stored = self._data["files"].get(key)
+        files = self._data.get("files", {})
+        if not isinstance(files, dict):
+            return None
+        stored = files.get(key)
         if not stored:
             return None
         return ExcelHelperConfigEntry(
@@ -120,7 +130,12 @@ class ExcelHelperConfigStore:
         )
         if not self.config_path.parent.exists():
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self._data.setdefault("files", {})[key] = entry.to_dict()
+        files = self._data.setdefault("files", {})
+        if not isinstance(files, dict):
+            files = {}
+            self._data["files"] = files
+        files[key] = entry.to_dict()
+        self._data["lastUsedFile"] = key
         self.config_path.write_text(
             json.dumps(self._data, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -138,3 +153,24 @@ class ExcelHelperConfigStore:
             **entry.to_dict(),
         }
         return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    def list_entries(self) -> List[Path]:
+        """Return all Excel paths for which a configuration exists."""
+
+        self._ensure_loaded()
+        files = self._data.get("files", {})
+        if not isinstance(files, dict):
+            return []
+        return sorted(Path(key) for key in files.keys())
+
+    def get_last_used_path(self) -> Path | None:
+        """Return the Excel path that was configured last, if still available."""
+
+        self._ensure_loaded()
+        last_used = self._data.get("lastUsedFile")
+        if isinstance(last_used, str):
+            try:
+                return Path(last_used)
+            except OSError:
+                return None
+        return None
