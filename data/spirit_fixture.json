@@ -1,0 +1,64 @@
+[
+  {
+    "spiritCode": "ZRH001",
+    "hotelName": "Hyatt Regency Zurich",
+    "region": "EAME",
+    "status": "Operating",
+    "location": {
+      "city": "Zürich",
+      "country": "Schweiz",
+      "address": "Flughafenstrasse 1"
+    },
+    "contacts": [
+      {
+        "role": "Project Director",
+        "name": "Max Muster",
+        "email": "max@hyatt.com",
+        "phone": "+41 44 123 45 67"
+      },
+      {
+        "role": "Design Lead",
+        "name": "Anna Beispiel",
+        "email": "anna@hyatt.com"
+      }
+    ]
+  },
+  {
+    "spiritCode": "LON123",
+    "hotelName": "Hyatt Regency London",
+    "region": "EAME",
+    "status": "Pipeline",
+    "location": {
+      "city": "London",
+      "country": "United Kingdom",
+      "address": "123 Park Lane"
+    },
+    "contacts": [
+      {
+        "role": "Operations Lead",
+        "name": "John Smith",
+        "email": "john@hyatt.com",
+        "phone": "+44 20 7946 0000"
+      }
+    ]
+  },
+  {
+    "spiritCode": "DXB777",
+    "hotelName": "Hyatt Regency Dubai",
+    "region": "EAME",
+    "status": "Renovation",
+    "location": {
+      "city": "Dubai",
+      "country": "Vereinigte Arabische Emirate",
+      "address": "Sheikh Zayed Road"
+    },
+    "contacts": [
+      {
+        "role": "Project Director",
+        "name": "Fatima Noor",
+        "email": "fatima@hyatt.com",
+        "phone": "+971 4 123 4567"
+      }
+    ]
+  }
+]
