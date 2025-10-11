@@ -1,64 +1,109 @@
-[
-  {
-    "spiritCode": "ZRH001",
-    "hotelName": "Hyatt Regency Zurich",
-    "region": "EAME",
-    "status": "Operating",
-    "location": {
-      "city": "Zürich",
-      "country": "Schweiz",
-      "address": "Flughafenstrasse 1"
-    },
-    "contacts": [
-      {
-        "role": "Project Director",
-        "name": "Max Muster",
-        "email": "max@hyatt.com",
-        "phone": "+41 44 123 45 67"
+{
+  "config": {
+    "selectedColumns": [
+      "Spirit Code",
+      "Hotel Name",
+      "Region",
+      "Status",
+      "City",
+      "Country",
+      "Address",
+      "Primary Contact Role",
+      "Primary Contact Name",
+      "Primary Contact Email",
+      "Primary Contact Phone",
+      "Secondary Contact Role",
+      "Secondary Contact Name",
+      "Secondary Contact Email",
+      "Secondary Contact Phone"
+    ],
+    "emailColumns": [
+      "Primary Contact Email",
+      "Secondary Contact Email"
+    ],
+    "fieldMapping": {
+      "spiritCode": "Spirit Code",
+      "displayField": "Hotel Name",
+      "region": "Region",
+      "status": "Status",
+      "city": "City",
+      "country": "Country",
+      "address": "Address"
+    }
+  },
+  "records": [
+    {
+      "spiritCode": "ZRH001",
+      "displayValue": "Hyatt Regency Zurich",
+      "fields": {
+        "Spirit Code": "ZRH001",
+        "Hotel Name": "Hyatt Regency Zurich",
+        "Region": "EAME",
+        "Status": "Operating",
+        "City": "Zürich",
+        "Country": "Schweiz",
+        "Address": "Flughafenstrasse 1",
+        "Primary Contact Role": "Project Director",
+        "Primary Contact Name": "Max Muster",
+        "Primary Contact Email": "max@hyatt.com",
+        "Primary Contact Phone": "+41 44 123 45 67",
+        "Secondary Contact Role": "Design Lead",
+        "Secondary Contact Name": "Anna Beispiel",
+        "Secondary Contact Email": "anna@hyatt.com",
+        "Secondary Contact Phone": null
       },
-      {
-        "role": "Design Lead",
-        "name": "Anna Beispiel",
-        "email": "anna@hyatt.com"
+      "emails": {
+        "Primary Contact Email": "max@hyatt.com",
+        "Secondary Contact Email": "anna@hyatt.com"
       }
-    ]
-  },
-  {
-    "spiritCode": "LON123",
-    "hotelName": "Hyatt Regency London",
-    "region": "EAME",
-    "status": "Pipeline",
-    "location": {
-      "city": "London",
-      "country": "United Kingdom",
-      "address": "123 Park Lane"
     },
-    "contacts": [
-      {
-        "role": "Operations Lead",
-        "name": "John Smith",
-        "email": "john@hyatt.com",
-        "phone": "+44 20 7946 0000"
+    {
+      "spiritCode": "LON123",
+      "displayValue": "Hyatt Regency London",
+      "fields": {
+        "Spirit Code": "LON123",
+        "Hotel Name": "Hyatt Regency London",
+        "Region": "EAME",
+        "Status": "Pipeline",
+        "City": "London",
+        "Country": "United Kingdom",
+        "Address": "123 Park Lane",
+        "Primary Contact Role": "Operations Lead",
+        "Primary Contact Name": "John Smith",
+        "Primary Contact Email": "john@hyatt.com",
+        "Primary Contact Phone": "+44 20 7946 0000",
+        "Secondary Contact Role": null,
+        "Secondary Contact Name": null,
+        "Secondary Contact Email": null,
+        "Secondary Contact Phone": null
+      },
+      "emails": {
+        "Primary Contact Email": "john@hyatt.com"
       }
-    ]
-  },
-  {
-    "spiritCode": "DXB777",
-    "hotelName": "Hyatt Regency Dubai",
-    "region": "EAME",
-    "status": "Renovation",
-    "location": {
-      "city": "Dubai",
-      "country": "Vereinigte Arabische Emirate",
-      "address": "Sheikh Zayed Road"
     },
-    "contacts": [
-      {
-        "role": "Project Director",
-        "name": "Fatima Noor",
-        "email": "fatima@hyatt.com",
-        "phone": "+971 4 123 4567"
+    {
+      "spiritCode": "DXB777",
+      "displayValue": "Hyatt Regency Dubai",
+      "fields": {
+        "Spirit Code": "DXB777",
+        "Hotel Name": "Hyatt Regency Dubai",
+        "Region": "EAME",
+        "Status": "Renovation",
+        "City": "Dubai",
+        "Country": "Vereinigte Arabische Emirate",
+        "Address": "Sheikh Zayed Road",
+        "Primary Contact Role": "Project Director",
+        "Primary Contact Name": "Fatima Noor",
+        "Primary Contact Email": "fatima@hyatt.com",
+        "Primary Contact Phone": "+971 4 123 4567",
+        "Secondary Contact Role": null,
+        "Secondary Contact Name": null,
+        "Secondary Contact Email": null,
+        "Secondary Contact Phone": null
+      },
+      "emails": {
+        "Primary Contact Email": "fatima@hyatt.com"
       }
-    ]
-  }
-]
+    }
+  ]
+}
