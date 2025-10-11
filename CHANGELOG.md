@@ -6,6 +6,7 @@
 - Ergänze umfangreiche Tests (Unit, Integration, E2E-nah) und Coverage-Tooling
 - Aktualisiere Dokumentation, README und CI-Pipeline
 - Ergänze Excel-Helfer zur Erzeugung von JSON-Fixtures samt Tests und Dokumentation
+- Ergänze Excel-Helper-GUI in der Anwendung inklusive Spalten- und Kontakt-Konfiguration
 
 ## [1.0.0] - 2024-05-01
 - Legacy-Version der Hotel-Lookup-Skripte
