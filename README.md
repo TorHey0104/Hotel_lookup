@@ -70,7 +70,9 @@ Die Datei `data/spirit_fixture.json` enthält drei Beispiel-Hotels (ZRH001, LON1
 
 ### Excel-Helfer
 
-Wer vorhandene Excel-Tabellen in die benötigte JSON-Struktur überführen möchte, kann das Skript `tools/excel_to_fixture.py` nutzen:
+Über den Button **„Excel Helper“** in der Spirit-Lookup-Anwendung lässt sich eine grafische Oberfläche öffnen, in der die gewünschte Excel-Datei ausgewählt und relevante Spalten markiert werden können. Die Auswahl wird als JSON-Konfiguration im `data/`-Verzeichnis gespeichert und steht beim nächsten Öffnen wieder zur Verfügung.
+
+Wer lieber auf der Kommandozeile arbeitet, kann weiterhin das Skript `tools/excel_to_fixture.py` nutzen:
 
 ```bash
 python tools/excel_to_fixture.py meine_hotels.xlsx data/meine_hotels.json

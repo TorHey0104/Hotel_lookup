@@ -8,6 +8,7 @@ from typing import List
 
 from .config import AppConfig
 from .controller import LookupResult, SpiritLookupController
+from .excel_helper import open_excel_helper
 from .mail import MailClientError, open_mail_client
 from .models import SpiritRecord
 from .providers import DataProviderError, RecordNotFoundError
@@ -20,6 +21,7 @@ class SpiritLookupApp:
         self.root = root
         self.controller = controller
         self.config = config
+        self.helper_config_path = config.fixture_path.parent / "excel_helper_config.json"
 
         self.current_query: str = ""
         self.current_page: int = 0
@@ -54,6 +56,13 @@ class SpiritLookupApp:
         self.search_combo.bind("<KeyRelease>", self._on_search_var_change)
         self.search_combo.bind("<<ComboboxSelected>>", lambda _event: self.on_search())
 
+        self.helper_button = ttk.Button(
+            main_frame,
+            text="Excel Helper",
+            command=self._open_excel_helper,
+        )
+        self.helper_button.grid(row=2, column=0, sticky="w", pady=(8, 0))
+
         self.load_more_button = ttk.Button(
             main_frame,
             text="Weitere Ergebnisse laden",
@@ -73,6 +82,9 @@ class SpiritLookupApp:
 
     def _update_status(self, text: str) -> None:
         self.status_var.set(text)
+
+    def _open_excel_helper(self) -> None:
+        open_excel_helper(self.root, self.helper_config_path)
 
     def _load_initial(self) -> None:
         try:
