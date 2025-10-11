@@ -25,15 +25,18 @@ class ExcelHelperWindow:
 
         self.window = tk.Toplevel(parent)
         self.window.title("Excel Helper")
-        self.window.geometry("720x520")
+        self.window.geometry("780x560")
         self.window.transient(parent)
         self.window.grab_set()
 
         self.selected_excel: Path | None = None
         self.column_vars: Dict[str, tk.BooleanVar] = {}
         self.email_vars: Dict[str, tk.BooleanVar] = {}
+        self.saved_var = tk.StringVar()
 
         self._build_ui()
+        self._refresh_saved_entries()
+        self._load_last_used_entry()
 
     def _build_ui(self) -> None:
         container = ttk.Frame(self.window, padding=16)
@@ -53,16 +56,28 @@ class ExcelHelperWindow:
         self.file_label = ttk.Label(container, text="Keine Datei gewählt", foreground="#555555")
         self.file_label.grid(row=1, column=1, columnspan=2, sticky="w", padx=(12, 0))
 
+        ttk.Label(container, text="Gespeicherte Konfiguration laden:").grid(
+            row=2, column=0, sticky="w", pady=(0, 4)
+        )
+        self.saved_combo = ttk.Combobox(
+            container,
+            textvariable=self.saved_var,
+            state="disabled",
+            width=80,
+        )
+        self.saved_combo.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 12))
+        self.saved_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_saved_selection())
+
         self.columns_frame = ttk.LabelFrame(container, text="Spaltenauswahl", padding=12)
-        self.columns_frame.grid(row=2, column=0, columnspan=3, sticky="nsew")
-        self.columns_frame.columnconfigure(0, weight=1)
+        self.columns_frame.grid(row=4, column=0, columnspan=3, sticky="nsew")
+        self.columns_inner = self._create_scrollable_section(self.columns_frame)
 
         self.contacts_frame = ttk.LabelFrame(container, text="Kontakt-E-Mails", padding=12)
-        self.contacts_frame.grid(row=3, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
-        self.contacts_frame.columnconfigure(0, weight=1)
+        self.contacts_frame.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
+        self.contacts_inner = self._create_scrollable_section(self.contacts_frame)
 
         button_frame = ttk.Frame(container)
-        button_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        button_frame.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(12, 0))
 
         self.save_button = ttk.Button(button_frame, text="Konfiguration speichern", command=self._save_config)
         self.save_button.grid(row=0, column=0, sticky="w")
@@ -75,18 +90,65 @@ class ExcelHelperWindow:
         close_button.grid(row=0, column=2, sticky="e")
 
         self.preview_text = tk.Text(container, height=8, width=80)
-        self.preview_text.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
+        self.preview_text.grid(row=7, column=0, columnspan=3, sticky="nsew", pady=(12, 0))
         self.preview_text.configure(state="disabled")
 
-        container.rowconfigure(2, weight=1)
-        container.rowconfigure(3, weight=1)
+        info_label = ttk.Label(
+            container,
+            text=f"Konfigurationsdatei: {self.config_path}",
+            foreground="#555555",
+        )
+        info_label.grid(row=8, column=0, columnspan=3, sticky="w", pady=(8, 0))
+
+        container.rowconfigure(4, weight=1)
         container.rowconfigure(5, weight=1)
+        container.rowconfigure(7, weight=1)
 
         self.window.bind("<Escape>", lambda _event: self.window.destroy())
 
+    def _create_scrollable_section(self, frame: ttk.LabelFrame) -> ttk.Frame:
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(frame, borderwidth=0, highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        inner = ttk.Frame(canvas)
+        canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_configure(event: tk.Event) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        inner.bind("<Configure>", _on_configure)
+        canvas.bind(
+            "<Enter>",
+            lambda _event: canvas.bind_all("<MouseWheel>", lambda e: self._on_mousewheel(e, canvas)),
+        )
+        canvas.bind(
+            "<Leave>",
+            lambda _event: canvas.unbind_all("<MouseWheel>"),
+        )
+        canvas.bind("<Button-4>", lambda e: self._on_mousewheel(e, canvas))
+        canvas.bind("<Button-5>", lambda e: self._on_mousewheel(e, canvas))
+
+        return inner
+
+    @staticmethod
+    def _on_mousewheel(event: tk.Event, canvas: tk.Canvas) -> None:
+        if getattr(event, "delta", 0):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        elif getattr(event, "num", None) == 4:
+            canvas.yview_scroll(-1, "units")
+        elif getattr(event, "num", None) == 5:
+            canvas.yview_scroll(1, "units")
+
     def _clear_frames(self) -> None:
-        for frame in (self.columns_frame, self.contacts_frame):
-            for child in frame.winfo_children():
+        for container in (self.columns_inner, self.contacts_inner):
+            for child in container.winfo_children():
                 child.destroy()
         self.column_vars.clear()
         self.email_vars.clear()
@@ -120,6 +182,8 @@ class ExcelHelperWindow:
         self._populate_headers(headers)
         self.save_button.configure(state=tk.NORMAL)
         self._show_preview()
+        self.saved_var.set(str(excel_path))
+        self._refresh_saved_entries()
 
     def _load_headers(self, excel_path: Path) -> List[str]:
         try:
@@ -149,18 +213,18 @@ class ExcelHelperWindow:
             if not header:
                 continue
             var = tk.BooleanVar(value=True if stored_columns is None else header in stored_columns)
-            check = ttk.Checkbutton(self.columns_frame, text=header, variable=var)
+            check = ttk.Checkbutton(self.columns_inner, text=header, variable=var)
             check.grid(row=idx, column=0, sticky="w", pady=2)
             self.column_vars[header] = var
 
         email_headers = detect_email_headers(headers)
         if not email_headers:
-            ttk.Label(self.contacts_frame, text="Keine Spalten mit E-Mail-Adressen erkannt.").grid(sticky="w")
+            ttk.Label(self.contacts_inner, text="Keine Spalten mit E-Mail-Adressen erkannt.").grid(sticky="w")
         else:
             for idx, header in enumerate(email_headers):
                 var = tk.BooleanVar(value=True if stored_emails is None else header in stored_emails)
                 check = ttk.Checkbutton(
-                    self.contacts_frame,
+                    self.contacts_inner,
                     text=header,
                     variable=var,
                 )
@@ -179,9 +243,12 @@ class ExcelHelperWindow:
         entry = self.config_store.save_entry(self.selected_excel, selected_columns, email_columns)
         messagebox.showinfo(
             "Gespeichert",
-            "Die Konfiguration wurde gespeichert. E-Mail-Spalten sind in der Draft-Konfiguration markiert.",
+            "Die Konfiguration wurde gespeichert und kann künftig über den Excel Helper erneut geladen werden.\n"
+            f"Ablage: {self.config_path}\n"
+            "Nutzen Sie die Auswahl anschließend mit dem Skript 'tools/excel_to_fixture.py', um eine Fixture-Datei zu erzeugen.",
         )
         self._update_preview(entry)
+        self._refresh_saved_entries()
 
     def _show_preview(self) -> None:
         if not self.selected_excel:
@@ -198,6 +265,81 @@ class ExcelHelperWindow:
             **entry.to_dict(),
         }
         self._set_preview_text(json.dumps(payload, indent=2, ensure_ascii=False))
+
+    def _refresh_saved_entries(self) -> None:
+        entries = [str(path) for path in self.config_store.list_entries()]
+        if entries:
+            self.saved_combo.configure(state="readonly")
+            self.saved_combo["values"] = entries
+        else:
+            self.saved_combo.configure(state="disabled")
+            self.saved_combo["values"] = []
+            self.saved_var.set("")
+
+    def _on_saved_selection(self) -> None:
+        selection = self.saved_var.get().strip()
+        if not selection:
+            return
+        excel_path = Path(selection)
+        if excel_path.exists():
+            self._load_entry_from_path(excel_path)
+        else:
+            messagebox.showwarning(
+                "Datei nicht gefunden",
+                "Die gespeicherte Excel-Datei wurde nicht gefunden. Die Vorschau zeigt die zuletzt gespeicherte Konfiguration.",
+            )
+            entry = self.config_store.get_entry(excel_path)
+            self.selected_excel = excel_path
+            self.file_label.configure(text=f"{excel_path} (nicht gefunden)")
+            self._clear_frames()
+            if entry:
+                payload = {
+                    "excelPath": str(excel_path),
+                    **entry.to_dict(),
+                }
+                self._set_preview_text(json.dumps(payload, indent=2, ensure_ascii=False))
+            else:
+                self._set_preview_text("{}")
+            self.save_button.configure(state=tk.DISABLED)
+
+    def _load_entry_from_path(self, excel_path: Path, *, silent: bool = False) -> None:
+        try:
+            headers = self._load_headers(excel_path)
+        except ModuleNotFoundError:
+            if not silent:
+                messagebox.showerror(
+                    "openpyxl nicht installiert",
+                    "Für den Excel-Import wird 'openpyxl' benötigt. Installiere das Paket z. B. mit `pip install openpyxl`.",
+                )
+            return
+        except ValueError as exc:
+            if not silent:
+                messagebox.showerror("Fehler beim Lesen", str(exc))
+            return
+
+        self.selected_excel = excel_path
+        self.file_label.configure(text=str(excel_path))
+        self._populate_headers(headers)
+        self.save_button.configure(state=tk.NORMAL)
+        self._show_preview()
+
+    def _load_last_used_entry(self) -> None:
+        last_used = self.config_store.get_last_used_path()
+        if not last_used:
+            return
+        self.saved_var.set(str(last_used))
+        if last_used.exists():
+            self._load_entry_from_path(last_used, silent=True)
+        else:
+            entry = self.config_store.get_entry(last_used)
+            if entry:
+                payload = {
+                    "excelPath": str(last_used),
+                    **entry.to_dict(),
+                }
+                self._set_preview_text(json.dumps(payload, indent=2, ensure_ascii=False))
+                self.file_label.configure(text=f"{last_used} (nicht gefunden)")
+                self.save_button.configure(state=tk.DISABLED)
 
     def _set_preview_text(self, content: str) -> None:
         self.preview_text.configure(state="normal")

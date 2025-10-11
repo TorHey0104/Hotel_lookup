@@ -70,7 +70,7 @@ Die Datei `data/spirit_fixture.json` enthält drei Beispiel-Hotels (ZRH001, LON1
 
 ### Excel-Helfer
 
-Über den Button **„Excel Helper“** in der Spirit-Lookup-Anwendung lässt sich eine grafische Oberfläche öffnen, in der die gewünschte Excel-Datei ausgewählt und relevante Spalten markiert werden können. Die Auswahl wird als JSON-Konfiguration im `data/`-Verzeichnis gespeichert und steht beim nächsten Öffnen wieder zur Verfügung.
+Über den Button **„Excel Helper“** in der Spirit-Lookup-Anwendung lässt sich eine grafische Oberfläche öffnen, in der die gewünschte Excel-Datei ausgewählt und relevante Spalten markiert werden können. Die Auswahl wird als JSON-Konfiguration (`data/excel_helper_config.json`) gespeichert, automatisch wieder geladen und kann über die Auswahlliste im Dialog jederzeit erneut geöffnet werden. Nach dem Speichern weist der Dialog auf das Zielverzeichnis hin; nutzen Sie anschließend das Skript `tools/excel_to_fixture.py`, um auf Basis derselben Excel-Datei eine JSON-Fixture zu erzeugen.
 
 Wer lieber auf der Kommandozeile arbeitet, kann weiterhin das Skript `tools/excel_to_fixture.py` nutzen:
 

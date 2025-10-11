@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from spirit_lookup.excel_helper_config import (
@@ -39,3 +40,41 @@ def test_config_store_roundtrip(tmp_path: Path) -> None:
     pretty = other_store.to_pretty_json(excel_file)
     assert "Spirit Code" in pretty
     assert "Contact1 Email" in pretty
+
+
+def test_config_store_lists_entries_and_last_used(tmp_path: Path) -> None:
+    config_path = tmp_path / "excel_helper_config.json"
+    store = ExcelHelperConfigStore(config_path)
+
+    first = (tmp_path / "first.xlsx").resolve()
+    second = (tmp_path / "second.xlsx").resolve()
+    first.write_text("dummy")
+    second.write_text("dummy")
+
+    store.save_entry(first, ["Hotel"], [])
+    store.save_entry(second, ["Spirit"], ["Contact"])
+
+    reloaded = ExcelHelperConfigStore(config_path)
+
+    entries = reloaded.list_entries()
+    assert entries == sorted([first, second])
+    assert reloaded.get_last_used_path() == second
+
+
+def test_config_store_handles_legacy_payload_without_last_used(tmp_path: Path) -> None:
+    config_path = tmp_path / "excel_helper_config.json"
+    legacy_content = {
+        "files": {
+            str((tmp_path / "legacy.xlsx").resolve()): {
+                "selectedColumns": ["A"],
+                "emailColumns": ["B"],
+            }
+        }
+    }
+    config_path.write_text(json.dumps(legacy_content), encoding="utf-8")
+
+    store = ExcelHelperConfigStore(config_path)
+
+    entries = store.list_entries()
+    assert len(entries) == 1
+    assert store.get_last_used_path() is None
