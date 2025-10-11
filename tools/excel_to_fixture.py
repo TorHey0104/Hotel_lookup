@@ -8,7 +8,7 @@ import math
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 try:
     from openpyxl import load_workbook
@@ -187,6 +187,27 @@ def convert_row(headers: Sequence[str], values: Sequence[Any]) -> Tuple[dict[str
                 meta_key = derive_meta_key(header)
                 meta[meta_key] = meta_value
 
+    def _assign_meta_value(target: Dict[str, Any], key: str, value: Any) -> None:
+        """Store a value in the meta dictionary while avoiding key collisions."""
+
+        base_key = key or "metaField"
+        candidate = base_key
+        index = 2
+        while candidate in target:
+            candidate = f"{base_key}{index}"
+            index += 1
+        target[candidate] = value
+
+    for header, value in items:
+        if header in used_headers:
+            continue
+        formatted = format_meta_value(value)
+        if formatted is None:
+            continue
+        used_headers.add(header)
+        meta_key = derive_meta_key(header)
+        _assign_meta_value(meta, meta_key, formatted)
+
     record: dict[str, Any] = {
         "spiritCode": spirit_code,
         "hotelName": hotel_name,
@@ -211,11 +232,7 @@ def convert_row(headers: Sequence[str], values: Sequence[Any]) -> Tuple[dict[str
     if meta:
         record["meta"] = meta
 
-    unused_columns = [
-        header
-        for header, value in items
-        if header not in used_headers and not is_empty(value)
-    ]
+    unused_columns: List[str] = []
     return record, unused_columns
 
 

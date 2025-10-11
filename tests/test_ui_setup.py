@@ -34,6 +34,9 @@ def _create_root_or_skip() -> tkinter.Tk:
 class DummyProvider(BaseDataProvider):
     """Simple provider returning no data for the UI tests."""
 
+    def __init__(self) -> None:
+        self.reload_calls = 0
+
     def list_records(
         self,
         query: str = "",
@@ -45,6 +48,9 @@ class DummyProvider(BaseDataProvider):
 
     def get_record(self, spirit_code: str) -> SpiritRecord:
         raise RecordNotFoundError("not implemented")
+
+    def reload(self) -> None:
+        self.reload_calls += 1
 
 
 def _create_excel_file(path: Path) -> None:
@@ -115,5 +121,48 @@ def test_generate_display_config(tmp_path: Path, monkeypatch) -> None:
         assert payload["fields"][0]["label"] == "Spirit Code"
         assert payload["fields"][2]["isEmail"] is True
         assert len(app.display_definitions) == 3
+    finally:
+        root.destroy()
+
+
+def test_auto_apply_fixture_updates_files(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    app_config = AppConfig(fixture_path=data_dir / "spirit_fixture.json")
+
+    excel_path = tmp_path / "fixture.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["Spirit Code", "Hotel Name", "Contact1 Email", "Notes"])
+    sheet.append(["ABC123", "Sample Hotel", "info@example.com", "Test"])
+    workbook.save(excel_path)
+
+    provider = DummyProvider()
+    controller = SpiritLookupController(provider)
+
+    root = _create_root_or_skip()
+    try:
+        app = SpiritLookupApp(root, controller, app_config)
+
+        app.setup_excel_path = excel_path
+        app.setup_sheet_var.set(workbook.active.title)
+
+        monkeypatch.setattr(messagebox, "showinfo", lambda *args, **kwargs: None)
+        monkeypatch.setattr(messagebox, "showerror", lambda *args, **kwargs: None)
+        monkeypatch.setattr(messagebox, "showwarning", lambda *args, **kwargs: None)
+
+        app._setup_convert_excel()
+        assert app.setup_apply_button["state"] == tkinter.NORMAL
+
+        app._setup_apply_fixture()
+
+        assert provider.reload_calls == 1
+        assert app_config.fixture_path.exists()
+        records = json.loads(app_config.fixture_path.read_text(encoding="utf-8"))
+        assert records[0]["spiritCode"] == "ABC123"
+        display_payload = json.loads(app.display_config_path.read_text(encoding="utf-8"))
+        labels = [item["label"] for item in display_payload["fields"]]
+        assert "Spirit Code" in labels
+        assert any(item.get("isEmail") for item in display_payload["fields"])
     finally:
         root.destroy()
