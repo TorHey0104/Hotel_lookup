@@ -84,6 +84,8 @@ Das Resultat lässt sich direkt als Fixture-Datei verwenden, indem `SPIRIT_FIXTU
 
 ## Troubleshooting
 
-- **Tkinter-Fehler „no display name“**: Auf Linux muss ggf. `sudo apt-get install python3-tk` oder `xvfb` installiert werden.
+- **Tkinter-Fehler „no display name“**: Die Anwendung benötigt eine aktive grafische Umgebung (`DISPLAY`).
+  In Headless- oder CI-Umgebungen brechen wir daher kontrolliert mit einem Hinweis ab.
+  Installieren Sie bei Bedarf `python3-tk` und starten Sie die Anwendung innerhalb einer X-Session bzw. via `xvfb-run`.
 - **SharePoint-Authentifizierung schlägt fehl**: Prüfen Sie Client-ID, Secret und List-ID. Nutzen Sie `DATA_SOURCE=fixture` für lokale/offline Entwicklung.
 - **Mailclient öffnet sich nicht**: Stellen Sie sicher, dass ein Standard-Mailprogramm registriert ist. Andernfalls erscheint eine Fehlermeldung.
