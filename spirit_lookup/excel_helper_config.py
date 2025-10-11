@@ -98,6 +98,18 @@ class ExcelHelperConfigStore:
             return files.copy()  # type: ignore[return-value]
         return {}
 
+    def reload(self) -> None:
+        """Reload configuration data from disk.
+
+        This resets the in-memory cache so that changes written by other
+        instances (for example the Excel helper dialog) become immediately
+        visible to existing store instances.
+        """
+
+        self._loaded = False
+        self._data = {"files": {}, "lastUsedFile": None}
+        self._ensure_loaded()
+
     def get_entry(self, excel_path: Path) -> ExcelHelperConfigEntry | None:
         """Retrieve the stored entry for a given Excel path."""
 
