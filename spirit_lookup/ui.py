@@ -12,6 +12,7 @@ from typing import List
 from .config import AppConfig
 from .controller import LookupResult, SpiritLookupController
 from .excel_helper import open_excel_helper
+from .excel_helper_config import ExcelHelperConfigStore
 from .mail import MailClientError, open_mail_client
 from .models import SpiritRecord
 from .providers import DataProviderError, RecordNotFoundError
@@ -25,6 +26,7 @@ class SpiritLookupApp:
         self.controller = controller
         self.config = config
         self.helper_config_path = config.fixture_path.parent / "excel_helper_config.json"
+        self.helper_config_store = ExcelHelperConfigStore(self.helper_config_path)
 
         self.current_query: str = ""
         self.current_page: int = 0
@@ -43,6 +45,7 @@ class SpiritLookupApp:
         self._excel_tool_module: ModuleType | None = None
 
         self._build_ui()
+        self._restore_excel_selection()
         self._load_initial()
 
     def _build_ui(self) -> None:
@@ -193,6 +196,63 @@ class SpiritLookupApp:
 
     def _open_excel_helper(self) -> None:
         open_excel_helper(self.root, self.helper_config_path)
+        self._restore_excel_selection(auto_convert=True)
+
+    def _restore_excel_selection(self, *, auto_convert: bool = False) -> None:
+        last_used = self.helper_config_store.get_last_used_path()
+        if not last_used:
+            return
+        entry = self.helper_config_store.get_entry(last_used)
+        if not entry:
+            return
+        if not last_used.exists():
+            self.setup_excel_path = None
+            self.setup_file_label.configure(text=f"{last_used} (nicht gefunden)")
+            self.setup_sheet_combo.configure(state="disabled")
+            self.setup_sheet_combo["values"] = []
+            self.setup_sheet_var.set("")
+            self.setup_convert_button.configure(state=tk.DISABLED)
+            self.setup_save_button.configure(state=tk.DISABLED)
+            pretty = self.helper_config_store.to_pretty_json(last_used)
+            self._set_setup_preview(pretty)
+            self.setup_warning_var.set(
+                "Die konfigurierte Excel-Datei wurde nicht gefunden. Bitte wählen Sie eine Datei aus."
+            )
+            return
+        try:
+            sheet_names = self._load_sheet_names(last_used)
+        except ModuleNotFoundError as exc:
+            self.setup_warning_var.set(str(exc))
+            self.setup_convert_button.configure(state=tk.DISABLED)
+            self.setup_save_button.configure(state=tk.DISABLED)
+            pretty = self.helper_config_store.to_pretty_json(last_used)
+            self._set_setup_preview(pretty if pretty != "{}" else "[]")
+            return
+        except ValueError as exc:
+            self.setup_warning_var.set(str(exc))
+            self.setup_convert_button.configure(state=tk.DISABLED)
+            self.setup_save_button.configure(state=tk.DISABLED)
+            pretty = self.helper_config_store.to_pretty_json(last_used)
+            self._set_setup_preview(pretty if pretty != "{}" else "[]")
+            return
+
+        self.setup_excel_path = last_used
+        self.setup_file_label.configure(text=str(last_used))
+        self.setup_sheet_combo.configure(state="readonly")
+        self.setup_sheet_combo["values"] = sheet_names
+        if sheet_names:
+            self.setup_sheet_var.set(sheet_names[0])
+        self.setup_convert_button.configure(state=tk.NORMAL)
+        self.setup_save_button.configure(state=tk.DISABLED)
+        self.setup_records = []
+        pretty_config = self.helper_config_store.to_pretty_json(last_used)
+        if pretty_config != "{}":
+            self._set_setup_preview(pretty_config)
+        else:
+            self._set_setup_preview("[]")
+        self.setup_warning_var.set("Konfiguration geladen. Bitte Excel einlesen.")
+        if auto_convert and sheet_names:
+            self.root.after(50, self._setup_convert_excel)
 
     def _set_setup_preview(self, content: str) -> None:
         self.setup_preview.configure(state="normal")

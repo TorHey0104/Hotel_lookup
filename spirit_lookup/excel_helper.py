@@ -379,7 +379,9 @@ class ExcelHelperWindow:
         self.preview_text.configure(state="disabled")
 
 
-def open_excel_helper(parent: tk.Tk, config_path: Path) -> None:
-    """Open the Excel helper dialog."""
+def open_excel_helper(parent: tk.Tk, config_path: Path) -> ExcelHelperWindow:
+    """Open the Excel helper dialog and wait until it is closed."""
 
-    ExcelHelperWindow(parent, config_path)
+    window = ExcelHelperWindow(parent, config_path)
+    parent.wait_window(window.window)
+    return window
