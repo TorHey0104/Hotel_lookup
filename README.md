@@ -68,6 +68,22 @@ Die Test-Suite umfasst Unit-, Integrations- und E2E-nahe Szenarien gegen die Fix
 
 Die Datei `data/spirit_fixture.json` enthält drei Beispiel-Hotels (ZRH001, LON123, DXB777). Für lokale Tests können weitere Einträge ergänzt werden. Die Struktur entspricht dem Interface `SpiritRecord` aus `spirit_lookup/models.py`.
 
+### Excel-Helfer
+
+Wer vorhandene Excel-Tabellen in die benötigte JSON-Struktur überführen möchte, kann das Skript `tools/excel_to_fixture.py` nutzen:
+
+```bash
+python tools/excel_to_fixture.py meine_hotels.xlsx data/meine_hotels.json
+```
+
+Unterstützte Spaltenüberschriften (Groß-/Kleinschreibung egal, Leerzeichen erlaubt):
+
+| Pflichtspalten | Optionale Spalten | Kontakte | Meta-Daten |
+|----------------|-------------------|----------|------------|
+| `Spirit Code`, `Hotel Name` | `Region`, `Status`, `City`, `Country`, `Address` | `Contact1 Role`, `Contact1 Name`, `Contact1 Email`, `Contact1 Phone` (für weitere Kontakte `Contact2 …`, `Contact3 …` usw.) | Spalten, die mit `Meta` beginnen, z. B. `Meta.launchYear` oder `Meta Notes` |
+
+Das Skript liest standardmäßig das erste Tabellenblatt, unterstützt die Option `--sheet` zur Auswahl eines anderen Blatts und warnt, falls Spalten nicht zugeordnet werden konnten. Das Resultat lässt sich direkt als Fixture-Datei verwenden, indem `SPIRIT_FIXTURE_PATH` auf den erzeugten JSON-Pfad zeigt.
+
 ## Troubleshooting
 
 - **Tkinter-Fehler „no display name“**: Auf Linux muss ggf. `sudo apt-get install python3-tk` oder `xvfb` installiert werden.
