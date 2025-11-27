@@ -23,6 +23,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
 import urllib.parse # For URL encoding email addresses
+import webbrowser
 
 # ————————————————————————————————————
 # ◉ CONFIGURE THIS
@@ -165,18 +166,28 @@ def draft_email(checkbox_vars, hotel_name, details_window):
     if not recipients:
         messagebox.showinfo("No Recipients", "No email addresses selected.")
     else:
+        # Mailto supports comma separators; Windows typically also accepts semicolons
         to_addresses = ",".join(recipients)
         subject = urllib.parse.quote(f"Hotel Information for {hotel_name}") # URL-encode subject
-        
+
         # Construct mailto URI
         mailto_uri = f"mailto:{to_addresses}?subject={subject}"
-        
+
         try:
-            # Use 'open' command on macOS to launch default mail client
-            os.system(f'open "{mailto_uri}"')
+            # Use Python's webbrowser module for cross-platform mailto handling
+            opened = webbrowser.open(mailto_uri)
+            if not opened:
+                raise RuntimeError("webbrowser did not open the mail client")
         except Exception as e:
-            messagebox.showerror("Email Error", f"Could not open email client: {e}")
-    
+            # Fallback for Windows environments where webbrowser might return False
+            if os.name == "nt":
+                try:
+                    os.startfile(mailto_uri)  # type: ignore[attr-defined]
+                except Exception as win_err:
+                    messagebox.showerror("Email Error", f"Could not open email client: {win_err}")
+            else:
+                messagebox.showerror("Email Error", f"Could not open email client: {e}")
+
     details_window.destroy() # Close the details window after attempting to draft email
 
 def show_details_gui(row):
