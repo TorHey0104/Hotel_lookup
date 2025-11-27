@@ -168,10 +168,16 @@ def draft_email(checkbox_vars, hotel_name, details_window):
         messagebox.showerror("Unsupported Platform", "Outlook email drafting is only available on Windows.")
         return
 
-    if importlib.util.find_spec("win32com.client") is None:
+    try:
+        win32_spec = importlib.util.find_spec("win32com.client")
+    except ModuleNotFoundError:
+        win32_spec = None
+
+    if win32_spec is None:
         messagebox.showerror(
             "Outlook Not Available",
-            "This feature requires Microsoft Outlook and the 'pywin32' package (win32com.client).",
+            "This feature requires Microsoft Outlook and the 'pywin32' package (win32com.client).\n"
+            "Install with: pip install pywin32",
         )
         return
 
