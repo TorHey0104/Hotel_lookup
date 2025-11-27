@@ -1,0 +1,80 @@
+{
+  "fields": [
+    {
+      "label": "Spirit Code",
+      "isEmail": false
+    },
+    {
+      "label": "Hotel",
+      "isEmail": false
+    },
+    {
+      "label": "Affiliation Date",
+      "isEmail": false
+    },
+    {
+      "label": "Brand",
+      "isEmail": false
+    },
+    {
+      "label": "Relationship",
+      "isEmail": false
+    },
+    {
+      "label": "JV Percent",
+      "isEmail": false
+    },
+    {
+      "label": "Hotel Email",
+      "isEmail": true
+    },
+    {
+      "label": "Opening Date",
+      "isEmail": false
+    },
+    {
+      "label": "RVP of Ops",
+      "isEmail": false
+    },
+    {
+      "label": "AVP of Ops-managed",
+      "isEmail": false
+    },
+    {
+      "label": "AVP of Ops",
+      "isEmail": false
+    },
+    {
+      "label": "GM - Primary",
+      "isEmail": true
+    },
+    {
+      "label": "GM",
+      "isEmail": true
+    },
+    {
+      "label": "RVP of Finance",
+      "isEmail": false
+    },
+    {
+      "label": "AGM",
+      "isEmail": false
+    },
+    {
+      "label": "DOF",
+      "isEmail": true
+    },
+    {
+      "label": "Engineering Director",
+      "isEmail": true
+    },
+    {
+      "label": "Engineering Director / Chief Engineer",
+      "isEmail": true
+    },
+    {
+      "label": "Director of Housekeeping",
+      "isEmail": false
+    }
+  ]
+}

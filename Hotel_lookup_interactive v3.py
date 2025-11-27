@@ -1,7 +1,24 @@
 #!/usr/bin/env python3
 import os
 from datetime import datetime
-import pandas as pd
+
+# Ensure pandas (and openpyxl) are available; try to import and attempt to install if missing
+# Add `# type: ignore` to silence editors/linters that cannot resolve the package in the current environment.
+try:
+    import pandas as pd  # type: ignore
+except Exception:
+    import sys
+    import subprocess
+    try:
+        # Try to install pandas and openpyxl (openpyxl is needed by pandas for .xlsx)
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "pandas", "openpyxl"])
+        import importlib
+        importlib.invalidate_caches()
+        import pandas as pd  # type: ignore
+    except Exception as e:
+        # Provide a clear error if automatic installation fails
+        raise ImportError("Could not import or install 'pandas' and/or 'openpyxl'. Please install them manually (e.g. pip install pandas openpyxl).") from e
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
@@ -10,7 +27,7 @@ import urllib.parse # For URL encoding email addresses
 # ————————————————————————————————————
 # ◉ CONFIGURE THIS
 # ————————————————————————————————————
-DATA_DIR  = "/Users/torstenheyroth/Library/CloudStorage/OneDrive-HyattHotels/___DATA"
+DATA_DIR  = r"C:\Users\4612135\OneDrive - Hyatt Hotels\___DATA"
 FILE_NAME = "2a Hotels one line hotel.xlsx"
 DEFAULT_FILE_PATH = os.path.join(DATA_DIR, FILE_NAME)
 

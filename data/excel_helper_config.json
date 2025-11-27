@@ -1,0 +1,36 @@
+{
+  "files": {
+    "/Users/torstenheyroth/Library/CloudStorage/OneDrive-HyattHotels/___DATA/2a Hotels one line hotel.xlsx": {
+      "selectedColumns": [
+        "Spirit Code",
+        "Hotel",
+        "Affiliation Date",
+        "Brand",
+        "Relationship",
+        "JV Percent",
+        "Hotel Email",
+        "Opening Date",
+        "RVP of Ops",
+        "AVP of Ops-managed",
+        "AVP of Ops",
+        "GM - Primary",
+        "GM",
+        "RVP of Finance",
+        "AGM",
+        "DOF",
+        "Engineering Director",
+        "Engineering Director / Chief Engineer",
+        "Director of Housekeeping"
+      ],
+      "emailColumns": [
+        "Hotel Email",
+        "GM - Primary",
+        "GM",
+        "DOF",
+        "Engineering Director",
+        "Engineering Director / Chief Engineer"
+      ]
+    }
+  },
+  "lastUsedFile": "/Users/torstenheyroth/Library/CloudStorage/OneDrive-HyattHotels/___DATA/2a Hotels one line hotel.xlsx"
+}
