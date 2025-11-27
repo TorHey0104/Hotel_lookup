@@ -253,7 +253,11 @@ def show_details_gui(row):
     button_frame.pack(pady=10) # This should now be visible
 
     tk.Button(button_frame, text="Close", command=win.destroy).pack(side="left", padx=10)
-    tk.Button(button_frame, text="Draft Email", command=lambda: draft_email(checkbox_vars, row.get('Hotel', 'N/A'), win)).pack(side="left", padx=10)
+    tk.Button(
+        button_frame,
+        text="Start Email",
+        command=lambda: draft_email(checkbox_vars, row.get('Hotel', 'N/A'), win),
+    ).pack(side="left", padx=10)
 
 def lookup():
     if df.empty:
