@@ -22,8 +22,7 @@ except Exception:
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
-import urllib.parse # For URL encoding email addresses
-import webbrowser
+import importlib.util
 
 # ————————————————————————————————————
 # ◉ CONFIGURE THIS
@@ -154,41 +153,39 @@ def on_hotel_keyrelease(event):
 hotel_combo.bind('<KeyRelease>', on_hotel_keyrelease)
 
 def draft_email(checkbox_vars, hotel_name, details_window):
-    """
-    Drafts an Outlook email with selected recipients and closes the details window.
-    """
+    """Draft an Outlook email on Windows using the selected recipients."""
+
     recipients = []
-    # Iterate through the list of (BooleanVar, email) tuples
     for var, email in checkbox_vars:
-        if var.get() and email: # If checkbox is checked and email exists
+        if var.get() and email:
             recipients.append(email)
-    
+
     if not recipients:
         messagebox.showinfo("No Recipients", "No email addresses selected.")
-    else:
-        # Mailto supports comma separators; Windows typically also accepts semicolons
-        to_addresses = ",".join(recipients)
-        subject = urllib.parse.quote(f"Hotel Information for {hotel_name}") # URL-encode subject
+        return
 
-        # Construct mailto URI
-        mailto_uri = f"mailto:{to_addresses}?subject={subject}"
+    if os.name != "nt":
+        messagebox.showerror("Unsupported Platform", "Outlook email drafting is only available on Windows.")
+        return
 
-        try:
-            # Use Python's webbrowser module for cross-platform mailto handling
-            opened = webbrowser.open(mailto_uri)
-            if not opened:
-                raise RuntimeError("webbrowser did not open the mail client")
-        except Exception as e:
-            # Fallback for Windows environments where webbrowser might return False
-            if os.name == "nt":
-                try:
-                    os.startfile(mailto_uri)  # type: ignore[attr-defined]
-                except Exception as win_err:
-                    messagebox.showerror("Email Error", f"Could not open email client: {win_err}")
-            else:
-                messagebox.showerror("Email Error", f"Could not open email client: {e}")
+    if importlib.util.find_spec("win32com.client") is None:
+        messagebox.showerror(
+            "Outlook Not Available",
+            "This feature requires Microsoft Outlook and the 'pywin32' package (win32com.client).",
+        )
+        return
 
-    details_window.destroy() # Close the details window after attempting to draft email
+    import win32com.client  # type: ignore[import-untyped]
+
+    try:
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        mail_item = outlook.CreateItem(0)
+        mail_item.To = ";".join(recipients)
+        mail_item.Subject = f"Hotel Information for {hotel_name}"
+        mail_item.Display(True)
+        details_window.destroy()
+    except Exception as exc:  # pragma: no cover - Outlook automation is Windows-specific
+        messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
 
 def show_details_gui(row):
     """
