@@ -24,6 +24,10 @@ from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
 import importlib.util
 
+# Cache Outlook availability and instance so email drafting is faster after the first use
+WIN32COM_AVAILABLE = os.name == "nt" and importlib.util.find_spec("win32com.client") is not None
+_outlook_app = None
+
 # ————————————————————————————————————
 # ◉ CONFIGURE THIS
 # ————————————————————————————————————
@@ -152,6 +156,24 @@ def on_hotel_keyrelease(event):
 
 hotel_combo.bind('<KeyRelease>', on_hotel_keyrelease)
 
+def get_outlook_app():
+    """Return a cached Outlook Application COM object (or create it on first use)."""
+
+    global _outlook_app
+
+    if _outlook_app is not None:
+        return _outlook_app
+
+    import win32com.client  # type: ignore[import-untyped]
+
+    try:
+        _outlook_app = win32com.client.gencache.EnsureDispatch("Outlook.Application")
+    except Exception:
+        # Fallback keeps behaviour consistent even if the gencache is unavailable
+        _outlook_app = win32com.client.Dispatch("Outlook.Application")
+
+    return _outlook_app
+
 def draft_email(checkbox_vars, hotel_name, details_window):
     """Draft an Outlook email on Windows using the selected recipients."""
 
@@ -168,12 +190,7 @@ def draft_email(checkbox_vars, hotel_name, details_window):
         messagebox.showerror("Unsupported Platform", "Outlook email drafting is only available on Windows.")
         return
 
-    try:
-        win32_spec = importlib.util.find_spec("win32com.client")
-    except ModuleNotFoundError:
-        win32_spec = None
-
-    if win32_spec is None:
+    if not WIN32COM_AVAILABLE:
         messagebox.showerror(
             "Outlook Not Available",
             "This feature requires Microsoft Outlook and the 'pywin32' package (win32com.client).\n"
@@ -181,14 +198,12 @@ def draft_email(checkbox_vars, hotel_name, details_window):
         )
         return
 
-    import win32com.client  # type: ignore[import-untyped]
-
     try:
-        outlook = win32com.client.Dispatch("Outlook.Application")
+        outlook = get_outlook_app()
         mail_item = outlook.CreateItem(0)
         mail_item.To = ";".join(recipients)
         mail_item.Subject = f"Hotel Information for {hotel_name}"
-        mail_item.Display(True)
+        mail_item.Display()
         details_window.destroy()
     except Exception as exc:  # pragma: no cover - Outlook automation is Windows-specific
         messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
