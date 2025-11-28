@@ -156,12 +156,12 @@ def on_hotel_keyrelease(event):
 
 hotel_combo.bind('<KeyRelease>', on_hotel_keyrelease)
 
-def get_outlook_app():
+def get_outlook_app(force_refresh: bool = False):
     """Return a cached Outlook Application COM object (or create it on first use)."""
 
     global _outlook_app
 
-    if _outlook_app is not None:
+    if _outlook_app is not None and not force_refresh:
         return _outlook_app
 
     import win32com.client  # type: ignore[import-untyped]
@@ -174,8 +174,21 @@ def get_outlook_app():
 
     return _outlook_app
 
+
+def warm_outlook_app():
+    """Preload Outlook once to speed up the first email draft."""
+
+    if os.name == "nt" and WIN32COM_AVAILABLE:
+        try:
+            get_outlook_app()
+        except Exception:
+            # Ignore warmup failures; the real attempt will surface the error.
+            pass
+
 def draft_email(checkbox_vars, hotel_name, details_window):
     """Draft an Outlook email on Windows using the selected recipients."""
+
+    global _outlook_app
 
     recipients = []
     for var, email in checkbox_vars:
@@ -201,12 +214,20 @@ def draft_email(checkbox_vars, hotel_name, details_window):
     try:
         outlook = get_outlook_app()
         mail_item = outlook.CreateItem(0)
-        mail_item.To = ";".join(recipients)
-        mail_item.Subject = f"Hotel Information for {hotel_name}"
-        mail_item.Display()
-        details_window.destroy()
-    except Exception as exc:  # pragma: no cover - Outlook automation is Windows-specific
-        messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
+    except Exception:
+        # If the cached Outlook instance is stale (e.g., RPC server unavailable), try a fresh connection once
+        try:
+            outlook = get_outlook_app(force_refresh=True)
+            mail_item = outlook.CreateItem(0)
+        except Exception as exc:  # pragma: no cover - Outlook automation is Windows-specific
+            messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
+            _outlook_app = None
+            return
+
+    mail_item.To = ";".join(recipients)
+    mail_item.Subject = f"Hotel Information for {hotel_name}"
+    mail_item.Display()
+    details_window.destroy()
 
 def show_details_gui(row):
     """
@@ -214,8 +235,8 @@ def show_details_gui(row):
     """
     win = tk.Toplevel(root)
     win.title(f"Details for {row.get('Hotel', 'N/A')}")
-    win.geometry("700x610")
-    win.minsize(500, 300)
+    win.geometry("700x760")
+    win.minsize(500, 400)
 
     # Frame for general information
     info_frame = ttk.LabelFrame(win, text="Hotel Information", padding="10")
@@ -365,5 +386,8 @@ status_label.grid(row=3, column=0, columnspan=2, sticky="we", padx=0, pady=(5, 0
 
 # Load default data after UI widgets are ready
 ensure_initial_data()
+
+# Warm Outlook in the background so the first email opens faster
+root.after(200, warm_outlook_app)
 
 root.mainloop()
