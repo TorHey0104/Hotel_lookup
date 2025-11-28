@@ -40,6 +40,8 @@ DEFAULT_REGION_COL = "Region"
 DEFAULT_COUNTRY_COL = "Geography"
 DEFAULT_COUNTRY_FALLBACK_COL = "Geographical Area"
 DEFAULT_CITY_COL = "City"
+DEFAULT_BRAND_BAND_COL = "Brand Band"
+DEFAULT_HYATT_DATE_COL = "Affiliation Date"
 DEFAULT_GM_COL = "GM - Primary"
 DEFAULT_ENG_COL = "Engineering Director / Chief Engineer"
 DEFAULT_DOF_COL = "DOF"
@@ -52,6 +54,7 @@ data_file_path = ""
 brand_values = []
 region_values = []
 country_values = []
+brand_band_values = []
 
 # Tk widgets / state
 hotel_combo = None
@@ -59,6 +62,9 @@ status_var = None
 brand_filter_var = None
 region_filter_var = None
 country_filter_var = None
+brand_band_filter_var = None
+hyatt_year_var = None
+hyatt_year_mode_var = None
 filtered_tree = None
 selected_tree = None
 selected_rows = {}
@@ -74,6 +80,10 @@ gm_col_var = None
 eng_col_var = None
 dof_col_var = None
 reg_eng_spec_col_var = None
+avp_col_var = None
+md_col_var = None
+brand_band_col_var = None
+hyatt_date_col_var = None
 
 brand_col_combo = None
 region_col_combo = None
@@ -84,6 +94,10 @@ gm_col_combo = None
 eng_col_combo = None
 dof_col_combo = None
 reg_eng_spec_combo = None
+avp_col_combo = None
+md_col_combo = None
+brand_band_col_combo = None
+hyatt_date_col_combo = None
 
 
 def format_timestamp(path: str) -> str:
@@ -99,7 +113,7 @@ def get_selected_col(var: tk.StringVar | None, allow_none: bool = False) -> str:
     if var is None:
         return ""
     val = var.get().strip()
-    if allow_none and val == "None":
+    if val == "None":
         return ""
     return val
 
@@ -124,6 +138,10 @@ def get_country_fallback_col():
     return get_selected_col(country_fallback_col_var, allow_none=True)
 
 
+def get_brand_band_col():
+    return get_selected_col(brand_band_col_var, allow_none=True)
+
+
 def get_gm_col():
     return get_selected_col(gm_col_var)
 
@@ -138,6 +156,18 @@ def get_dof_col():
 
 def get_reg_eng_spec_col():
     return get_selected_col(reg_eng_spec_col_var, allow_none=True)
+
+
+def get_avp_col():
+    return get_selected_col(avp_col_var, allow_none=True)
+
+
+def get_md_col():
+    return get_selected_col(md_col_var, allow_none=True)
+
+
+def get_hyatt_date_col():
+    return get_selected_col(hyatt_date_col_var, allow_none=True)
 
 
 def get_country_value(row: pd.Series) -> str:
@@ -198,25 +228,40 @@ def refresh_setup_tab_options():
     cols = sorted([c for c in df.columns]) if not df.empty else []
     default_list = cols or [""]
 
-    for combo in [brand_col_combo, region_col_combo, city_col_combo, gm_col_combo, eng_col_combo, dof_col_combo]:
+    for combo in [
+        brand_col_combo,
+        region_col_combo,
+        city_col_combo,
+        gm_col_combo,
+        eng_col_combo,
+        dof_col_combo,
+        avp_col_combo,
+        md_col_combo,
+        brand_band_col_combo,
+        hyatt_date_col_combo,
+    ]:
         if combo is not None:
-            combo["values"] = default_list
+            combo["values"] = ["None"] + default_list
 
     if country_col_combo is not None:
-        country_col_combo["values"] = default_list
+        country_col_combo["values"] = ["None"] + default_list
     if country_fallback_combo is not None:
         country_fallback_combo["values"] = ["None"] + default_list
     if reg_eng_spec_combo is not None:
         reg_eng_spec_combo["values"] = ["None"] + default_list
 
-    ensure_var_in_columns(brand_col_var, [DEFAULT_BRAND_COL])
-    ensure_var_in_columns(region_col_var, [DEFAULT_REGION_COL])
-    ensure_var_in_columns(city_col_var, [DEFAULT_CITY_COL])
-    ensure_var_in_columns(country_col_var, [DEFAULT_COUNTRY_COL, DEFAULT_COUNTRY_FALLBACK_COL])
+    ensure_var_in_columns(brand_col_var, [DEFAULT_BRAND_COL], allow_none=True)
+    ensure_var_in_columns(region_col_var, [DEFAULT_REGION_COL], allow_none=True)
+    ensure_var_in_columns(city_col_var, [DEFAULT_CITY_COL], allow_none=True)
+    ensure_var_in_columns(brand_band_col_var, [DEFAULT_BRAND_BAND_COL], allow_none=True)
+    ensure_var_in_columns(country_col_var, [DEFAULT_COUNTRY_COL, DEFAULT_COUNTRY_FALLBACK_COL], allow_none=True)
     ensure_var_in_columns(country_fallback_col_var, [DEFAULT_COUNTRY_FALLBACK_COL], allow_none=True)
-    ensure_var_in_columns(gm_col_var, [DEFAULT_GM_COL, "GM"])  # include old fallback GM
-    ensure_var_in_columns(eng_col_var, [DEFAULT_ENG_COL, "Engineering Director"])  # include old fallback Engineering Director
-    ensure_var_in_columns(dof_col_var, [DEFAULT_DOF_COL])
+    ensure_var_in_columns(hyatt_date_col_var, [DEFAULT_HYATT_DATE_COL], allow_none=True)
+    ensure_var_in_columns(gm_col_var, [DEFAULT_GM_COL, "GM"], allow_none=True)  # include old fallback GM
+    ensure_var_in_columns(eng_col_var, [DEFAULT_ENG_COL, "Engineering Director"], allow_none=True)  # include old fallback Engineering Director
+    ensure_var_in_columns(dof_col_var, [DEFAULT_DOF_COL], allow_none=True)
+    ensure_var_in_columns(avp_col_var, ["AVP of Ops", "AVP of Ops-managed"], allow_none=True)
+    ensure_var_in_columns(md_col_var, ["SVP / Managing Director", "SVP"], allow_none=True)
     ensure_var_in_columns(reg_eng_spec_col_var, [DEFAULT_REG_ENG_SPEC_COL], allow_none=True)
 
 
@@ -229,15 +274,17 @@ def apply_column_settings():
 
 def update_filter_options():
     """Populate filter dropdowns based on loaded data and chosen columns."""
-    global brand_values, region_values, country_values
+    global brand_values, region_values, country_values, brand_band_values
     brand_col = get_brand_col()
     region_col = get_region_col()
     country_col = get_country_col() or get_country_fallback_col()
+    brand_band_col = get_brand_band_col()
 
     if df.empty:
         brand_values = []
         region_values = []
         country_values = []
+        brand_band_values = []
     else:
         brand_values = sorted(df[brand_col].dropna().astype(str).unique().tolist()) if brand_col in df.columns else []
         region_values = sorted(df[region_col].dropna().astype(str).unique().tolist()) if region_col in df.columns else []
@@ -245,6 +292,9 @@ def update_filter_options():
             country_values = sorted(df[country_col].dropna().astype(str).unique().tolist())
         else:
             country_values = []
+        brand_band_values = (
+            sorted(df[brand_band_col].dropna().astype(str).unique().tolist()) if brand_band_col in df.columns else []
+        )
 
     if brand_filter_var is not None:
         brand_filter_var.set("Any")
@@ -252,6 +302,8 @@ def update_filter_options():
         region_filter_var.set("Any")
     if country_filter_var is not None:
         country_filter_var.set("Any")
+    if brand_band_filter_var is not None:
+        brand_band_filter_var.set("Any")
 
     if 'brand_combo' in globals() and brand_combo is not None:
         brand_combo["values"] = ["Any"] + brand_values
@@ -259,6 +311,8 @@ def update_filter_options():
         region_combo["values"] = ["Any"] + region_values
     if 'country_combo' in globals() and country_combo is not None:
         country_combo["values"] = ["Any"] + country_values
+    if 'brand_band_combo' in globals() and brand_band_combo is not None:
+        brand_band_combo["values"] = ["Any"] + brand_band_values
 
     if filtered_tree is not None:
         refresh_filtered_hotels()
@@ -353,6 +407,8 @@ def filtered_dataframe():
     brand_col = get_brand_col()
     region_col = get_region_col()
     country_col = get_country_col() or get_country_fallback_col()
+    brand_band_col = get_brand_band_col()
+    hyatt_col = get_hyatt_date_col()
 
     if brand_filter_var is not None:
         brand_val = brand_filter_var.get()
@@ -366,6 +422,24 @@ def filtered_dataframe():
         country_val = country_filter_var.get()
         if country_val and country_val != "Any" and country_col in filt.columns:
             filt = filt[filt[country_col].astype(str) == country_val]
+    if brand_band_filter_var is not None:
+        brand_band_val = brand_band_filter_var.get()
+        if brand_band_val and brand_band_val != "Any" and brand_band_col in filt.columns:
+            filt = filt[filt[brand_band_col].astype(str) == brand_band_val]
+
+    # Hyatt date filter (year with before/after/on)
+    if hyatt_col and hyatt_col in filt.columns and hyatt_year_mode_var is not None and hyatt_year_var is not None:
+        mode = hyatt_year_mode_var.get()
+        year_str = hyatt_year_var.get().strip()
+        if mode and mode != "Any" and year_str.isdigit():
+            target_year = int(year_str)
+            years = pd.to_datetime(filt[hyatt_col], errors="coerce").dt.year
+            if mode == "Before":
+                filt = filt[years.notna() & (years <= target_year)]
+            elif mode == "After":
+                filt = filt[years.notna() & (years >= target_year)]
+            elif mode == "On":
+                filt = filt[years.notna() & (years == target_year)]
     return filt
 
 
@@ -383,6 +457,7 @@ def refresh_filtered_hotels():
 
     brand_col = get_brand_col()
     region_col = get_region_col()
+    brand_band_col = get_brand_band_col()
 
     for idx, (_, row) in enumerate(filt_df.iterrows()):
         tree_id = str(row.name)
@@ -396,6 +471,7 @@ def refresh_filtered_hotels():
                 row.get("Hotel", ""),
                 get_city_value(row),
                 row.get(brand_col, "") if brand_col in row else "",
+                row.get(brand_band_col, "") if brand_band_col in row else "",
                 row.get(region_col, "") if region_col in row else "",
                 get_country_value(row),
             ),
@@ -452,6 +528,7 @@ def update_selected_tree():
 
     brand_col = get_brand_col()
     region_col = get_region_col()
+    brand_band_col = get_brand_band_col()
 
     for row_idx, row in selected_rows.items():
         selected_tree.insert(
@@ -463,6 +540,7 @@ def update_selected_tree():
                 row.get("Hotel", ""),
                 get_city_value(row),
                 row.get(brand_col, "") if brand_col in row else "",
+                row.get(brand_band_col, "") if brand_band_col in row else "",
                 row.get(region_col, "") if region_col in row else "",
                 get_country_value(row),
             ),
@@ -472,6 +550,8 @@ def update_selected_tree():
 def get_role_addresses(row: pd.Series, role_key: str):
     """Return a list of email addresses for the chosen role."""
     role_map = {
+        "AVP": [get_avp_col()],
+        "MD": [get_md_col()],
         "GM": [get_gm_col()],
         "Engineering": [get_eng_col()],
         "DOF": [get_dof_col()],
@@ -484,13 +564,17 @@ def get_role_addresses(row: pd.Series, role_key: str):
     return emails
 
 
-def draft_emails_for_selection(gm_var, eng_var, dof_var, reg_eng_var):
+def draft_emails_for_selection(avp_var, md_var, gm_var, eng_var, dof_var, reg_eng_var):
     """Create Outlook draft emails for the selected hotels and roles."""
     if not selected_rows:
         messagebox.showinfo("Keine Hotels", "Bitte waehlen Sie mindestens ein Hotel aus der Auswahl aus.")
         return
 
     chosen_roles = []
+    if avp_var.get():
+        chosen_roles.append("AVP")
+    if md_var.get():
+        chosen_roles.append("MD")
     if gm_var.get():
         chosen_roles.append("GM")
     if eng_var.get():
@@ -639,6 +723,10 @@ def show_details_gui(row):
     roles_frame.pack(padx=10, pady=10, fill="both", expand=False)
 
     roles_to_checkbox = {}
+    if get_avp_col():
+        roles_to_checkbox["AVP"] = get_avp_col()
+    if get_md_col():
+        roles_to_checkbox["MD"] = get_md_col()
     if get_gm_col():
         roles_to_checkbox["GM"] = get_gm_col()
     if get_eng_col():
@@ -779,9 +867,13 @@ region_col_var = tk.StringVar(value=DEFAULT_REGION_COL)
 country_col_var = tk.StringVar(value=DEFAULT_COUNTRY_COL)
 country_fallback_col_var = tk.StringVar(value=DEFAULT_COUNTRY_FALLBACK_COL)
 city_col_var = tk.StringVar(value=DEFAULT_CITY_COL)
+brand_band_col_var = tk.StringVar(value=DEFAULT_BRAND_BAND_COL)
+hyatt_date_col_var = tk.StringVar(value=DEFAULT_HYATT_DATE_COL)
 gm_col_var = tk.StringVar(value=DEFAULT_GM_COL)
 eng_col_var = tk.StringVar(value=DEFAULT_ENG_COL)
 dof_col_var = tk.StringVar(value=DEFAULT_DOF_COL)
+avp_col_var = tk.StringVar(value="AVP of Ops")
+md_col_var = tk.StringVar(value="SVP / Managing Director")
 reg_eng_spec_col_var = tk.StringVar(value="None")
 
 # Menu bar
@@ -837,6 +929,9 @@ filters_frame.pack(fill="x", padx=5, pady=5)
 brand_filter_var = tk.StringVar(value="Any")
 region_filter_var = tk.StringVar(value="Any")
 country_filter_var = tk.StringVar(value="Any")
+brand_band_filter_var = tk.StringVar(value="Any")
+hyatt_year_var = tk.StringVar(value="")
+hyatt_year_mode_var = tk.StringVar(value="Any")
 
 row_f = 0
 if True:
@@ -844,20 +939,34 @@ if True:
     brand_combo = ttk.Combobox(filters_frame, textvariable=brand_filter_var, values=["Any"], state="readonly")
     brand_combo.grid(row=row_f, column=1, sticky="ew", padx=5, pady=2)
 
-    ttk.Label(filters_frame, text="Region").grid(row=row_f, column=2, sticky="w", padx=5, pady=2)
-    region_combo = ttk.Combobox(filters_frame, textvariable=region_filter_var, values=["Any"], state="readonly")
-    region_combo.grid(row=row_f, column=3, sticky="ew", padx=5, pady=2)
+    ttk.Label(filters_frame, text="Brand Band").grid(row=row_f, column=2, sticky="w", padx=5, pady=2)
+    brand_band_combo = ttk.Combobox(filters_frame, textvariable=brand_band_filter_var, values=["Any"], state="readonly")
+    brand_band_combo.grid(row=row_f, column=3, sticky="ew", padx=5, pady=2)
 
-    ttk.Label(filters_frame, text="Country/Area").grid(row=row_f, column=4, sticky="w", padx=5, pady=2)
+    ttk.Label(filters_frame, text="Region").grid(row=row_f, column=4, sticky="w", padx=5, pady=2)
+    region_combo = ttk.Combobox(filters_frame, textvariable=region_filter_var, values=["Any"], state="readonly")
+    region_combo.grid(row=row_f, column=5, sticky="ew", padx=5, pady=2)
+
+    ttk.Label(filters_frame, text="Country/Area").grid(row=row_f, column=6, sticky="w", padx=5, pady=2)
     country_combo = ttk.Combobox(filters_frame, textvariable=country_filter_var, values=["Any"], state="readonly")
-    country_combo.grid(row=row_f, column=5, sticky="ew", padx=5, pady=2)
+    country_combo.grid(row=row_f, column=7, sticky="ew", padx=5, pady=2)
+
+    ttk.Label(filters_frame, text="Hyatt Date (year)").grid(row=row_f, column=8, sticky="w", padx=5, pady=2)
+    hyatt_year_entry = ttk.Entry(filters_frame, textvariable=hyatt_year_var, width=8)
+    hyatt_year_entry.grid(row=row_f, column=9, sticky="w", padx=5, pady=2)
+
+    hyatt_mode_combo = ttk.Combobox(
+        filters_frame, textvariable=hyatt_year_mode_var, values=["Any", "Before", "After", "On"], state="readonly", width=8
+    )
+    hyatt_mode_combo.grid(row=row_f, column=10, sticky="w", padx=5, pady=2)
 
     filters_frame.columnconfigure(1, weight=1)
     filters_frame.columnconfigure(3, weight=1)
     filters_frame.columnconfigure(5, weight=1)
+    filters_frame.columnconfigure(7, weight=1)
 
 apply_filter_btn = ttk.Button(filters_frame, text="Apply Filter", command=refresh_filtered_hotels)
-apply_filter_btn.grid(row=0, column=6, sticky="e", padx=8, pady=2)
+apply_filter_btn.grid(row=0, column=11, sticky="e", padx=8, pady=2)
 
 lists_frame = ttk.Frame(multi_frame)
 lists_frame.pack(fill="both", expand=True, padx=5, pady=5)
@@ -867,7 +976,7 @@ filtered_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
 
 filtered_tree = ttk.Treeview(
     filtered_frame,
-    columns=("Spirit", "Hotel", "City", "Brand", "Region", "Country"),
+    columns=("Spirit", "Hotel", "City", "Brand", "Brand Band", "Region", "Country"),
     show="headings",
     selectmode="extended",
 )
@@ -876,6 +985,7 @@ for col, width in [
     ("Hotel", 220),
     ("City", 120),
     ("Brand", 120),
+    ("Brand Band", 120),
     ("Region", 120),
     ("Country", 140),
 ]:
@@ -895,7 +1005,7 @@ selected_frame.pack(side="left", fill="both", expand=True, padx=(5, 0))
 
 selected_tree = ttk.Treeview(
     selected_frame,
-    columns=("Spirit", "Hotel", "City", "Brand", "Region", "Country"),
+    columns=("Spirit", "Hotel", "City", "Brand", "Brand Band", "Region", "Country"),
     show="headings",
     selectmode="extended",
 )
@@ -904,6 +1014,7 @@ for col, width in [
     ("Hotel", 220),
     ("City", 120),
     ("Brand", 120),
+    ("Brand Band", 120),
     ("Region", 120),
     ("Country", 140),
 ]:
@@ -914,6 +1025,8 @@ selected_tree.pack(fill="both", expand=True)
 roles_frame = ttk.LabelFrame(multi_frame, text="Empfaengerrollen", padding=10)
 roles_frame.pack(fill="x", padx=5, pady=5)
 
+avp_var = tk.BooleanVar(value=False)
+md_var = tk.BooleanVar(value=False)
 gm_var = tk.BooleanVar(value=True)
 eng_var = tk.BooleanVar(value=False)
 dof_var = tk.BooleanVar(value=False)
@@ -921,6 +1034,10 @@ reg_eng_var = tk.BooleanVar(value=False)
 
 roles_label = ttk.Label(roles_frame, text="Wen anschreiben?")
 roles_label.pack(side="left", padx=5)
+
+ttk.Checkbutton(roles_frame, text="AVP", variable=avp_var).pack(side="left", padx=5)
+
+ttk.Checkbutton(roles_frame, text="MD", variable=md_var).pack(side="left", padx=5)
 
 ttk.Checkbutton(roles_frame, text="GM", variable=gm_var).pack(side="left", padx=5)
 
@@ -934,7 +1051,7 @@ ttk.Checkbutton(roles_frame, text="Regional Eng Specialist", variable=reg_eng_va
 draft_btn = ttk.Button(
     roles_frame,
     text="Draft Emails in Outlook",
-    command=lambda: draft_emails_for_selection(gm_var, eng_var, dof_var, reg_eng_var),
+    command=lambda: draft_emails_for_selection(avp_var, md_var, gm_var, eng_var, dof_var, reg_eng_var),
 )
 draft_btn.pack(side="right", padx=10)
 
@@ -952,14 +1069,18 @@ region_col_combo = ttk.Combobox(setup_top, textvariable=region_col_var, state="r
 country_col_combo = ttk.Combobox(setup_top, textvariable=country_col_var, state="readonly")
 country_fallback_combo = ttk.Combobox(setup_top, textvariable=country_fallback_col_var, state="readonly")
 city_col_combo = ttk.Combobox(setup_top, textvariable=city_col_var, state="readonly")
+brand_band_col_combo = ttk.Combobox(setup_top, textvariable=brand_band_col_var, state="readonly")
+hyatt_date_col_combo = ttk.Combobox(setup_top, textvariable=hyatt_date_col_var, state="readonly")
 
 row_setup = 0
 labels = [
     ("Brand column", brand_col_combo),
+    ("Brand Band column", brand_band_col_combo),
     ("Region column", region_col_combo),
     ("Country column", country_col_combo),
     ("Country fallback (optional)", country_fallback_combo),
     ("City column", city_col_combo),
+    ("Hyatt Date column (for year filter)", hyatt_date_col_combo),
 ]
 for idx, (text, combo) in enumerate(labels):
     ttk.Label(setup_top, text=text).grid(row=row_setup + idx, column=0, sticky="w", padx=5, pady=2)
@@ -969,12 +1090,16 @@ setup_top.columnconfigure(1, weight=1)
 roles_setup = ttk.LabelFrame(setup_frame, text="Recipient Columns", padding=10)
 roles_setup.pack(fill="x", padx=5, pady=5)
 
+avp_col_combo = ttk.Combobox(roles_setup, textvariable=avp_col_var, state="readonly")
+md_col_combo = ttk.Combobox(roles_setup, textvariable=md_col_var, state="readonly")
 gm_col_combo = ttk.Combobox(roles_setup, textvariable=gm_col_var, state="readonly")
 eng_col_combo = ttk.Combobox(roles_setup, textvariable=eng_col_var, state="readonly")
 dof_col_combo = ttk.Combobox(roles_setup, textvariable=dof_col_var, state="readonly")
 reg_eng_spec_combo = ttk.Combobox(roles_setup, textvariable=reg_eng_spec_col_var, state="readonly")
 
 labels_roles = [
+    ("AVP column", avp_col_combo),
+    ("Managing Director column", md_col_combo),
     ("GM column", gm_col_combo),
     ("Engineering column", eng_col_combo),
     ("DOF column", dof_col_combo),
@@ -1002,6 +1127,7 @@ refresh_setup_tab_options()
 brand_combo["values"] = ["Any"] + brand_values
 region_combo["values"] = ["Any"] + region_values
 country_combo["values"] = ["Any"] + country_values
+brand_band_combo["values"] = ["Any"] + brand_band_values
 
 # Initial filtered view
 refresh_filtered_hotels()
