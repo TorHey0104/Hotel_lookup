@@ -61,13 +61,18 @@ relationship_values = []
 # Tk widgets / state
 hotel_combo = None
 status_var = None
-brand_filter_var = None
-region_filter_var = None
-country_filter_var = None
-brand_band_filter_var = None
-relationship_filter_var = None
+brand_filter_var = None  # kept for legacy; not used with multiselect
+region_filter_var = None  # kept for legacy; not used with multiselect
+country_filter_var = None  # kept for legacy; not used with multiselect
+brand_band_filter_var = None  # kept for legacy; not used with multiselect
+relationship_filter_var = None  # kept for legacy; not used with multiselect
 hyatt_year_var = None
 hyatt_year_mode_var = None
+brand_listbox = None
+brand_band_listbox = None
+region_listbox = None
+relationship_listbox = None
+country_listbox = None
 filtered_tree = None
 selected_tree = None
 selected_rows = {}
@@ -330,16 +335,18 @@ def update_filter_options():
     if relationship_filter_var is not None:
         relationship_filter_var.set("Any")
 
-    if 'brand_combo' in globals() and brand_combo is not None:
-        brand_combo["values"] = ["Any"] + brand_values
-    if 'region_combo' in globals() and region_combo is not None:
-        region_combo["values"] = ["Any"] + region_values
-    if 'country_combo' in globals() and country_combo is not None:
-        country_combo["values"] = ["Any"] + country_values
-    if 'brand_band_combo' in globals() and brand_band_combo is not None:
-        brand_band_combo["values"] = ["Any"] + brand_band_values
-    if 'relationship_combo' in globals() and relationship_combo is not None:
-        relationship_combo["values"] = ["Any"] + relationship_values
+    def reset_listbox(lb, values):
+        if lb is None:
+            return
+        lb.delete(0, tk.END)
+        for val in values:
+            lb.insert(tk.END, val)
+
+    reset_listbox(brand_listbox, brand_values)
+    reset_listbox(brand_band_listbox, brand_band_values)
+    reset_listbox(region_listbox, region_values)
+    reset_listbox(relationship_listbox, relationship_values)
+    reset_listbox(country_listbox, country_values)
 
     if filtered_tree is not None:
         refresh_filtered_hotels()
@@ -552,26 +559,27 @@ def filtered_dataframe():
     hyatt_col = get_hyatt_date_col()
     relationship_col = get_relationship_col()
 
-    if brand_filter_var is not None:
-        brand_val = brand_filter_var.get()
-        if brand_val and brand_val != "Any" and brand_col in filt.columns:
-            filt = filt[filt[brand_col].astype(str) == brand_val]
-    if region_filter_var is not None:
-        region_val = region_filter_var.get()
-        if region_val and region_val != "Any" and region_col in filt.columns:
-            filt = filt[filt[region_col].astype(str) == region_val]
-    if country_filter_var is not None:
-        country_val = country_filter_var.get()
-        if country_val and country_val != "Any" and country_col in filt.columns:
-            filt = filt[filt[country_col].astype(str) == country_val]
-    if brand_band_filter_var is not None:
-        brand_band_val = brand_band_filter_var.get()
-        if brand_band_val and brand_band_val != "Any" and brand_band_col in filt.columns:
-            filt = filt[filt[brand_band_col].astype(str) == brand_band_val]
-    if relationship_filter_var is not None:
-        rel_val = relationship_filter_var.get()
-        if rel_val and rel_val != "Any" and relationship_col in filt.columns:
-            filt = filt[filt[relationship_col].astype(str) == rel_val]
+    def selected_values(lb):
+        if lb is None:
+            return []
+        return [lb.get(i) for i in lb.curselection()]
+
+    selected_brands = selected_values(brand_listbox)
+    selected_regions = selected_values(region_listbox)
+    selected_countries = selected_values(country_listbox)
+    selected_bands = selected_values(brand_band_listbox)
+    selected_relationships = selected_values(relationship_listbox)
+
+    if selected_brands and brand_col in filt.columns:
+        filt = filt[filt[brand_col].astype(str).isin(selected_brands)]
+    if selected_regions and region_col in filt.columns:
+        filt = filt[filt[region_col].astype(str).isin(selected_regions)]
+    if selected_countries and country_col in filt.columns:
+        filt = filt[filt[country_col].astype(str).isin(selected_countries)]
+    if selected_bands and brand_band_col in filt.columns:
+        filt = filt[filt[brand_band_col].astype(str).isin(selected_bands)]
+    if selected_relationships and relationship_col in filt.columns:
+        filt = filt[filt[relationship_col].astype(str).isin(selected_relationships)]
 
     # Hyatt date filter (year with before/after/on)
     if hyatt_col and hyatt_col in filt.columns and hyatt_year_mode_var is not None and hyatt_year_var is not None:
@@ -678,12 +686,25 @@ def update_selected_tree():
     for item in selected_tree.get_children():
         selected_tree.delete(item)
 
-    brand_col = get_brand_col()
-    region_col = get_region_col()
-    brand_band_col = get_brand_band_col()
-    relationship_col = get_relationship_col()
+    chosen_roles = []
+    if "avp_var" in globals() and avp_var.get():
+        chosen_roles.append("AVP")
+    if "md_var" in globals() and md_var.get():
+        chosen_roles.append("MD")
+    if "gm_var" in globals() and gm_var.get():
+        chosen_roles.append("GM")
+    if "eng_var" in globals() and eng_var.get():
+        chosen_roles.append("Engineering")
+    if "dof_var" in globals() and dof_var.get():
+        chosen_roles.append("DOF")
+    if "reg_eng_var" in globals() and reg_eng_var.get():
+        chosen_roles.append("RegionalEngineeringSpecialist")
 
     for row_idx, row in selected_rows.items():
+        recips = []
+        for role in chosen_roles or ["AVP", "MD", "GM", "Engineering", "DOF", "RegionalEngineeringSpecialist"]:
+            recips.extend(get_role_addresses(row, role))
+        recips = [r for r in recips if r]
         selected_tree.insert(
             "",
             "end",
@@ -691,12 +712,7 @@ def update_selected_tree():
             values=(
                 row.get("Spirit Code", ""),
                 row.get("Hotel", ""),
-                get_city_value(row),
-                row.get(brand_col, "") if brand_col in row else "",
-                row.get(brand_band_col, "") if brand_band_col in row else "",
-                row.get(relationship_col, "") if relationship_col in row else "",
-                row.get(region_col, "") if region_col in row else "",
-                get_country_value(row),
+                "; ".join(recips),
             ),
         )
 
@@ -714,7 +730,9 @@ def get_role_addresses(row: pd.Series, role_key: str):
     emails = []
     for col in role_map.get(role_key, []):
         if col and col in row and pd.notna(row[col]):
-            emails.append(str(row[col]))
+            email = str(row[col]).strip()
+            if email and email.lower() not in {"n/a", "na", "none"}:
+                emails.append(email)
     return emails
 
 
@@ -1097,57 +1115,54 @@ notebook.add(multi_frame, text="Multi-Email")
 filters_frame = ttk.LabelFrame(multi_frame, text="Filter Hotels", padding=10)
 filters_frame.pack(fill="x", padx=5, pady=5)
 
-brand_filter_var = tk.StringVar(value="Any")
-region_filter_var = tk.StringVar(value="Any")
-country_filter_var = tk.StringVar(value="Any")
-brand_band_filter_var = tk.StringVar(value="Any")
-relationship_filter_var = tk.StringVar(value="Any")
 hyatt_year_var = tk.StringVar(value="")
 hyatt_year_mode_var = tk.StringVar(value="Any")
 
+def make_multiselect(parent, label_text):
+    wrap = ttk.Frame(parent)
+    ttk.Label(wrap, text=label_text).pack(anchor="w")
+    lb = tk.Listbox(wrap, selectmode="extended", height=6, exportselection=False)
+    lb.pack(side="left", fill="both", expand=True)
+    sb = ttk.Scrollbar(wrap, orient="vertical", command=lb.yview)
+    sb.pack(side="right", fill="y")
+    lb.config(yscrollcommand=sb.set)
+    return wrap, lb
+
 row_f = 0
-if True:
-    ttk.Label(filters_frame, text="Brand").grid(row=row_f, column=0, sticky="w", padx=5, pady=2)
-    brand_combo = ttk.Combobox(filters_frame, textvariable=brand_filter_var, values=["Any"], state="readonly")
-    brand_combo.grid(row=row_f, column=1, sticky="ew", padx=5, pady=2)
+brand_wrap, brand_listbox = make_multiselect(filters_frame, "Brand (multi-select)")
+brand_wrap.grid(row=row_f, column=0, sticky="nsew", padx=4, pady=2)
 
-    ttk.Label(filters_frame, text="Brand Band").grid(row=row_f, column=2, sticky="w", padx=5, pady=2)
-    brand_band_combo = ttk.Combobox(filters_frame, textvariable=brand_band_filter_var, values=["Any"], state="readonly")
-    brand_band_combo.grid(row=row_f, column=3, sticky="ew", padx=5, pady=2)
+band_wrap, brand_band_listbox = make_multiselect(filters_frame, "Brand Band")
+band_wrap.grid(row=row_f, column=1, sticky="nsew", padx=4, pady=2)
 
-    ttk.Label(filters_frame, text="Region").grid(row=row_f, column=4, sticky="w", padx=5, pady=2)
-    region_combo = ttk.Combobox(filters_frame, textvariable=region_filter_var, values=["Any"], state="readonly")
-    region_combo.grid(row=row_f, column=5, sticky="ew", padx=5, pady=2)
+region_wrap, region_listbox = make_multiselect(filters_frame, "Region")
+region_wrap.grid(row=row_f, column=2, sticky="nsew", padx=4, pady=2)
 
-    ttk.Label(filters_frame, text="Relationship").grid(row=row_f, column=6, sticky="w", padx=5, pady=2)
-    relationship_combo = ttk.Combobox(filters_frame, textvariable=relationship_filter_var, values=["Any"], state="readonly")
-    relationship_combo.grid(row=row_f, column=7, sticky="ew", padx=5, pady=2)
+relationship_wrap, relationship_listbox = make_multiselect(filters_frame, "Relationship")
+relationship_wrap.grid(row=row_f, column=3, sticky="nsew", padx=4, pady=2)
 
-    ttk.Label(filters_frame, text="Country/Area").grid(row=row_f, column=8, sticky="w", padx=5, pady=2)
-    country_combo = ttk.Combobox(filters_frame, textvariable=country_filter_var, values=["Any"], state="readonly")
-    country_combo.grid(row=row_f, column=9, sticky="ew", padx=5, pady=2)
+country_wrap, country_listbox = make_multiselect(filters_frame, "Country/Area")
+country_wrap.grid(row=row_f, column=4, sticky="nsew", padx=4, pady=2)
 
-    ttk.Label(filters_frame, text="Hyatt Date (year)").grid(row=row_f, column=10, sticky="w", padx=5, pady=2)
-    hyatt_year_entry = ttk.Entry(filters_frame, textvariable=hyatt_year_var, width=8)
-    hyatt_year_entry.grid(row=row_f, column=11, sticky="w", padx=5, pady=2)
+hyatt_wrap = ttk.Frame(filters_frame)
+hyatt_wrap.grid(row=row_f, column=5, sticky="nw", padx=4, pady=2)
+ttk.Label(hyatt_wrap, text="Hyatt Date (year)").pack(anchor="w")
+hyatt_year_entry = ttk.Entry(hyatt_wrap, textvariable=hyatt_year_var, width=10)
+hyatt_year_entry.pack(anchor="w", pady=(0, 2))
+hyatt_mode_combo = ttk.Combobox(
+    hyatt_wrap,
+    textvariable=hyatt_year_mode_var,
+    values=["Any", "Before", "Before/Equal", "Equal", "After/Equal", "After"],
+    state="readonly",
+    width=12,
+)
+hyatt_mode_combo.pack(anchor="w")
 
-    hyatt_mode_combo = ttk.Combobox(
-        filters_frame,
-        textvariable=hyatt_year_mode_var,
-        values=["Any", "Before", "Before/Equal", "Equal", "After/Equal", "After"],
-        state="readonly",
-        width=12,
-    )
-    hyatt_mode_combo.grid(row=row_f, column=12, sticky="w", padx=5, pady=2)
-
-    filters_frame.columnconfigure(1, weight=1)
-    filters_frame.columnconfigure(3, weight=1)
-    filters_frame.columnconfigure(5, weight=1)
-    filters_frame.columnconfigure(7, weight=1)
-    filters_frame.columnconfigure(9, weight=1)
+for col in range(5):
+    filters_frame.columnconfigure(col, weight=1)
 
 apply_filter_btn = ttk.Button(filters_frame, text="Apply Filter", command=refresh_filtered_hotels)
-apply_filter_btn.grid(row=0, column=13, sticky="e", padx=8, pady=2)
+apply_filter_btn.grid(row=0, column=6, sticky="e", padx=8, pady=2)
 
 lists_frame = ttk.Frame(multi_frame)
 lists_frame.pack(fill="both", expand=True, padx=5, pady=5)
@@ -1187,19 +1202,14 @@ selected_frame.pack(side="left", fill="both", expand=True, padx=(5, 0))
 
 selected_tree = ttk.Treeview(
     selected_frame,
-    columns=("Spirit", "Hotel", "City", "Brand", "Brand Band", "Relationship", "Region", "Country"),
+    columns=("Spirit", "Hotel", "Recipients"),
     show="headings",
     selectmode="extended",
 )
 for col, width in [
     ("Spirit", 80),
     ("Hotel", 220),
-    ("City", 120),
-    ("Brand", 120),
-    ("Brand Band", 120),
-    ("Relationship", 120),
-    ("Region", 120),
-    ("Country", 140),
+    ("Recipients", 360),
 ]:
     selected_tree.heading(col, text=col)
     selected_tree.column(col, width=width, stretch=True)
@@ -1222,13 +1232,13 @@ ttk.Checkbutton(roles_frame, text="AVP", variable=avp_var).pack(side="left", pad
 
 ttk.Checkbutton(roles_frame, text="MD", variable=md_var).pack(side="left", padx=5)
 
-ttk.Checkbutton(roles_frame, text="GM", variable=gm_var).pack(side="left", padx=5)
+ttk.Checkbutton(roles_frame, text="GM", variable=gm_var, command=update_selected_tree).pack(side="left", padx=5)
 
-ttk.Checkbutton(roles_frame, text="Engineering", variable=eng_var).pack(side="left", padx=5)
+ttk.Checkbutton(roles_frame, text="Engineering", variable=eng_var, command=update_selected_tree).pack(side="left", padx=5)
 
-ttk.Checkbutton(roles_frame, text="DOF", variable=dof_var).pack(side="left", padx=5)
+ttk.Checkbutton(roles_frame, text="DOF", variable=dof_var, command=update_selected_tree).pack(side="left", padx=5)
 
-ttk.Checkbutton(roles_frame, text="Regional Eng Specialist", variable=reg_eng_var).pack(side="left", padx=5)
+ttk.Checkbutton(roles_frame, text="Regional Eng Specialist", variable=reg_eng_var, command=update_selected_tree).pack(side="left", padx=5)
 
 
 draft_btn = ttk.Button(
@@ -1309,11 +1319,7 @@ ensure_initial_data()
 refresh_setup_tab_options()
 
 # Populate filter dropdown values after data load
-brand_combo["values"] = ["Any"] + brand_values
-region_combo["values"] = ["Any"] + region_values
-country_combo["values"] = ["Any"] + country_values
-brand_band_combo["values"] = ["Any"] + brand_band_values
-relationship_combo["values"] = ["Any"] + relationship_values
+update_filter_options()
 
 # Initial filtered view
 refresh_filtered_hotels()
