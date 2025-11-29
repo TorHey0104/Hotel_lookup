@@ -77,6 +77,8 @@ filtered_tree = None
 selected_tree = None
 selected_rows = {}
 current_filtered_indexes = []
+role_send_vars = {}
+ROLE_MODES = ["Skip", "To", "CC", "BCC"]
 
 # Column selection vars (set in setup tab)
 brand_col_var = None
@@ -189,6 +191,20 @@ def get_md_col():
 
 def get_hyatt_date_col():
     return get_selected_col(hyatt_date_col_var, allow_none=True)
+
+
+def normalize_emails(raw: str):
+    """Split a raw email string by common delimiters and drop placeholders like N/A."""
+    parts = []
+    for chunk in str(raw).replace(",", ";").split(";"):
+        email = chunk.strip()
+        if not email:
+            continue
+        low = email.lower()
+        if low in {"n/a", "na", "none"}:
+            continue
+        parts.append(email)
+    return parts
 
 
 def get_country_value(row: pd.Series) -> str:
@@ -350,6 +366,18 @@ def update_filter_options():
 
     if filtered_tree is not None:
         refresh_filtered_hotels()
+
+
+def reset_filters():
+    """Clear all filter selections."""
+    for lb in [brand_listbox, brand_band_listbox, region_listbox, relationship_listbox, country_listbox]:
+        if lb is not None:
+            lb.selection_clear(0, tk.END)
+    if hyatt_year_var is not None:
+        hyatt_year_var.set("")
+    if hyatt_year_mode_var is not None:
+        hyatt_year_mode_var.set("Any")
+    refresh_filtered_hotels()
 
 
 def load_data(path: str):
@@ -672,10 +700,19 @@ def remove_selected_hotels():
         selected_rows.pop(row_idx, None)
     update_selected_tree()
 
-
 def clear_selected_hotels():
     """Clear all selections."""
     selected_rows.clear()
+    update_selected_tree()
+
+
+def add_all_filtered_hotels():
+    """Add all currently filtered hotels to the selection list."""
+    filt_df = filtered_dataframe()
+    for idx, row in filt_df.iterrows():
+        if idx in selected_rows:
+            continue
+        selected_rows[idx] = row
     update_selected_tree()
 
 
@@ -687,18 +724,9 @@ def update_selected_tree():
         selected_tree.delete(item)
 
     chosen_roles = []
-    if "avp_var" in globals() and avp_var.get():
-        chosen_roles.append("AVP")
-    if "md_var" in globals() and md_var.get():
-        chosen_roles.append("MD")
-    if "gm_var" in globals() and gm_var.get():
-        chosen_roles.append("GM")
-    if "eng_var" in globals() and eng_var.get():
-        chosen_roles.append("Engineering")
-    if "dof_var" in globals() and dof_var.get():
-        chosen_roles.append("DOF")
-    if "reg_eng_var" in globals() and reg_eng_var.get():
-        chosen_roles.append("RegionalEngineeringSpecialist")
+    for role, var in role_send_vars.items():
+        if var.get() != "Skip":
+            chosen_roles.append(role)
 
     for row_idx, row in selected_rows.items():
         recips = []
@@ -730,31 +758,19 @@ def get_role_addresses(row: pd.Series, role_key: str):
     emails = []
     for col in role_map.get(role_key, []):
         if col and col in row and pd.notna(row[col]):
-            email = str(row[col]).strip()
-            if email and email.lower() not in {"n/a", "na", "none"}:
+            raw = str(row[col])
+            for email in normalize_emails(raw):
                 emails.append(email)
     return emails
 
 
-def draft_emails_for_selection(avp_var, md_var, gm_var, eng_var, dof_var, reg_eng_var):
+def draft_emails_for_selection():
     """Create Outlook draft emails for the selected hotels and roles."""
     if not selected_rows:
         messagebox.showinfo("Keine Hotels", "Bitte waehlen Sie mindestens ein Hotel aus der Auswahl aus.")
         return
 
-    chosen_roles = []
-    if avp_var.get():
-        chosen_roles.append("AVP")
-    if md_var.get():
-        chosen_roles.append("MD")
-    if gm_var.get():
-        chosen_roles.append("GM")
-    if eng_var.get():
-        chosen_roles.append("Engineering")
-    if dof_var.get():
-        chosen_roles.append("DOF")
-    if reg_eng_var.get():
-        chosen_roles.append("RegionalEngineeringSpecialist")
+    chosen_roles = [role for role, var in role_send_vars.items() if var.get() != "Skip"]
 
     if not chosen_roles:
         messagebox.showinfo("Keine Rollen", "Bitte waehlen Sie mindestens eine Empfaengerrolle.")
@@ -787,17 +803,30 @@ def draft_emails_for_selection(avp_var, md_var, gm_var, eng_var, dof_var, reg_en
     region_col = get_region_col()
 
     for row_idx, row in selected_rows.items():
-        recipients = []
+        to_list = []
+        cc_list = []
+        bcc_list = []
+
         for role in chosen_roles:
-            recipients.extend(get_role_addresses(row, role))
-        recipients = [r for r in recipients if r]
-        if not recipients:
+            emails = get_role_addresses(row, role)
+            mode = role_send_vars.get(role).get() if role in role_send_vars else "To"
+            if mode == "To":
+                to_list.extend(emails)
+            elif mode == "CC":
+                cc_list.extend(emails)
+            elif mode == "BCC":
+                bcc_list.extend(emails)
+
+        all_recips = [r for r in to_list + cc_list + bcc_list if r]
+        if not all_recips:
             missing_addresses.append(row.get("Hotel", "N/A"))
             continue
 
         try:
             mail_item = outlook.CreateItem(0)
-            mail_item.To = ";".join(recipients)
+            mail_item.To = ";".join(to_list)
+            mail_item.CC = ";".join(cc_list)
+            mail_item.BCC = ";".join(bcc_list)
             hotel_name = row.get("Hotel", "Hotel")
             mail_item.Subject = f"Hotel Information for {hotel_name}"
             body_lines = [
@@ -949,7 +978,7 @@ def draft_email_single(checkbox_vars, hotel_name, details_window=None):
     recipients = []
     for var, email in checkbox_vars:
         if var.get() and email:
-            recipients.append(email)
+            recipients.extend(normalize_emails(email))
 
     if not recipients:
         messagebox.showinfo("No Recipients", "No email addresses selected.")
@@ -1164,6 +1193,9 @@ for col in range(5):
 apply_filter_btn = ttk.Button(filters_frame, text="Apply Filter", command=refresh_filtered_hotels)
 apply_filter_btn.grid(row=0, column=6, sticky="e", padx=8, pady=2)
 
+reset_filter_btn = ttk.Button(filters_frame, text="Reset Filters", command=reset_filters)
+reset_filter_btn.grid(row=0, column=7, sticky="e", padx=8, pady=2)
+
 lists_frame = ttk.Frame(multi_frame)
 lists_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -1196,6 +1228,7 @@ buttons_frame.pack(side="left", fill="y")
 ttk.Button(buttons_frame, text=">>>", command=add_selected_hotels).pack(pady=8)
 ttk.Button(buttons_frame, text="Remove", command=remove_selected_hotels).pack(pady=8)
 ttk.Button(buttons_frame, text="Clear All", command=clear_selected_hotels).pack(pady=8)
+ttk.Button(buttons_frame, text="Add All Filtered", command=add_all_filtered_hotels).pack(pady=8)
 
 selected_frame = ttk.LabelFrame(lists_frame, text="Ausgewaehlte Hotels", padding=5)
 selected_frame.pack(side="left", fill="both", expand=True, padx=(5, 0))
@@ -1218,35 +1251,29 @@ selected_tree.pack(fill="both", expand=True)
 roles_frame = ttk.LabelFrame(multi_frame, text="Empfaengerrollen", padding=10)
 roles_frame.pack(fill="x", padx=5, pady=5)
 
-avp_var = tk.BooleanVar(value=False)
-md_var = tk.BooleanVar(value=False)
-gm_var = tk.BooleanVar(value=True)
-eng_var = tk.BooleanVar(value=False)
-dof_var = tk.BooleanVar(value=False)
-reg_eng_var = tk.BooleanVar(value=False)
-
-roles_label = ttk.Label(roles_frame, text="Wen anschreiben?")
-roles_label.pack(side="left", padx=5)
-
-ttk.Checkbutton(roles_frame, text="AVP", variable=avp_var).pack(side="left", padx=5)
-
-ttk.Checkbutton(roles_frame, text="MD", variable=md_var).pack(side="left", padx=5)
-
-ttk.Checkbutton(roles_frame, text="GM", variable=gm_var, command=update_selected_tree).pack(side="left", padx=5)
-
-ttk.Checkbutton(roles_frame, text="Engineering", variable=eng_var, command=update_selected_tree).pack(side="left", padx=5)
-
-ttk.Checkbutton(roles_frame, text="DOF", variable=dof_var, command=update_selected_tree).pack(side="left", padx=5)
-
-ttk.Checkbutton(roles_frame, text="Regional Eng Specialist", variable=reg_eng_var, command=update_selected_tree).pack(side="left", padx=5)
+role_send_vars = {}
 
 
-draft_btn = ttk.Button(
-    roles_frame,
-    text="Draft Emails in Outlook",
-    command=lambda: draft_emails_for_selection(avp_var, md_var, gm_var, eng_var, dof_var, reg_eng_var),
-)
-draft_btn.pack(side="right", padx=10)
+def add_role_selector(parent, role_name, default_mode="Skip"):
+    var = tk.StringVar(value=default_mode)
+    cb = ttk.Combobox(parent, textvariable=var, values=ROLE_MODES, state="readonly", width=10)
+    cb.bind("<<ComboboxSelected>>", lambda e: update_selected_tree())
+    role_send_vars[role_name] = var
+    row = len(parent.grid_slaves()) // 2
+    ttk.Label(parent, text=role_name).grid(row=row, column=0, sticky="w", padx=4, pady=2)
+    cb.grid(row=row, column=1, sticky="w", padx=4, pady=2)
+
+
+roles_frame.columnconfigure(1, weight=1)
+add_role_selector(roles_frame, "AVP", "Skip")
+add_role_selector(roles_frame, "MD", "Skip")
+add_role_selector(roles_frame, "GM", "To")
+add_role_selector(roles_frame, "Engineering", "CC")
+add_role_selector(roles_frame, "DOF", "CC")
+add_role_selector(roles_frame, "RegionalEngineeringSpecialist", "CC")
+
+draft_btn = ttk.Button(roles_frame, text="Draft Emails in Outlook", command=draft_emails_for_selection)
+draft_btn.grid(row=0, column=3, rowspan=3, sticky="e", padx=8)
 
 # ---------------------------------------------------------------------------
 # Tab 3: Setup
