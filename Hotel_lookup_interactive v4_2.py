@@ -332,10 +332,15 @@ def ensure_style():
 def show_splash():
     """Show a splash window while loading."""
     global splash_win, splash_status_var, splash_file_var, splash_logo_img
+    try:
+        root.withdraw()
+    except Exception:
+        pass
     splash_win = tk.Toplevel()
     splash_win.overrideredirect(True)
     splash_win.geometry("520x320")
     splash_win.attributes("-topmost", True)
+    splash_win.transient(root)
 
     container = ttk.Frame(splash_win, padding=12)
     container.pack(fill="both", expand=True)
@@ -390,6 +395,10 @@ def close_splash():
         except Exception:
             pass
     splash_win = None
+    try:
+        root.deiconify()
+    except Exception:
+        pass
 
 
 def refresh_filter_columns_list():
