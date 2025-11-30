@@ -25,6 +25,7 @@ import json
 import importlib.util
 import glob
 import html
+from datetime import date
 
 # Cache Outlook availability and instance so email drafting is faster after the first use
 WIN32COM_AVAILABLE = os.name == "nt" and importlib.util.find_spec("win32com.client") is not None
@@ -33,9 +34,15 @@ _outlook_app = None
 # ---------------------------------------------------------------------------
 # CONFIGURE THIS
 # ---------------------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = r"C:\Users\4612135\OneDrive - Hyatt Hotels\___DATA"
 FILE_NAME = "2a Hotels one line hotel.xlsx"
 DEFAULT_FILE_PATH = os.path.join(DATA_DIR, FILE_NAME)
+LOGO_PATH = os.path.join(BASE_DIR, "hyatt_logo.png")  # optional logo, relative to script directory
+
+TOOL_NAME = "Hyatt EAME Hotel Lookup and Multi E-Mail Tool"
+VERSION = "4.2"
+VERSION_DATE = date.today().strftime("%d.%m.%Y")
 
 # Default column names (can be overridden in Setup tab)
 DEFAULT_BRAND_COL = "Brand"
@@ -129,6 +136,12 @@ signatures_cache = {}
 MANDATORY_FILTER_COLS = ["Spirit Code", "Hotel"]
 visible_optional_filter_cols = ["City", "Brand", "Brand Band", "Relationship", "Region", "Country"]
 filter_cols_listbox = None
+
+# Splash
+splash_win = None
+splash_status_var = None
+splash_file_var = None
+splash_logo_img = None
 
 
 def format_timestamp(path: str) -> str:
@@ -314,6 +327,69 @@ def ensure_style():
     # Blue accent for active tab
     style.map("TNotebook.Tab", background=[("selected", "#1f4fa3")], foreground=[("selected", "white")])
     style.configure("TNotebook.Tab", padding=(8, 4))
+
+
+def show_splash():
+    """Show a splash window while loading."""
+    global splash_win, splash_status_var, splash_file_var, splash_logo_img
+    splash_win = tk.Toplevel()
+    splash_win.overrideredirect(True)
+    splash_win.geometry("520x320")
+    splash_win.attributes("-topmost", True)
+
+    container = ttk.Frame(splash_win, padding=12)
+    container.pack(fill="both", expand=True)
+
+    # Logo
+    splash_logo_img = None
+    if os.path.isfile(LOGO_PATH):
+        try:
+            splash_logo_img = tk.PhotoImage(file=LOGO_PATH)
+            ttk.Label(container, image=splash_logo_img).pack(anchor="w")
+        except Exception:
+            ttk.Label(container, text="Hyatt").pack(anchor="w")
+    else:
+        ttk.Label(container, text="Hyatt").pack(anchor="w")
+
+    ttk.Label(container, text=TOOL_NAME, font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(8, 2))
+    ttk.Label(container, text=f"Version {VERSION} ({VERSION_DATE})").pack(anchor="w")
+    ttk.Label(container, text="Author: Torsten Heyorth, Dir Engineering Operations").pack(anchor="w")
+    ttk.Label(container, text="Created with OpenAI Codex & VS Code").pack(anchor="w", pady=(0, 8))
+
+    splash_file_var = tk.StringVar(value="Loading data file...")
+    ttk.Label(container, textvariable=splash_file_var).pack(anchor="w", pady=(4, 2))
+
+    splash_status_var = tk.StringVar(value="Please wait, initializing...")
+    ttk.Label(container, textvariable=splash_status_var, foreground="gray").pack(anchor="w")
+
+    ttk.Button(container, text="Understood...", command=close_splash).pack(anchor="e", pady=(12, 0))
+
+    # Center
+    splash_win.update_idletasks()
+    w = splash_win.winfo_width()
+    h = splash_win.winfo_height()
+    ws = splash_win.winfo_screenwidth()
+    hs = splash_win.winfo_screenheight()
+    x = int((ws / 2) - (w / 2))
+    y = int((hs / 2) - (h / 2))
+    splash_win.geometry(f"{w}x{h}+{x}+{y}")
+
+
+def update_splash(file_path: str, status: str):
+    if splash_file_var is not None:
+        splash_file_var.set(f"Loaded file: {os.path.basename(file_path)}")
+    if splash_status_var is not None:
+        splash_status_var.set(status)
+
+
+def close_splash():
+    global splash_win
+    if splash_win is not None:
+        try:
+            splash_win.destroy()
+        except Exception:
+            pass
+    splash_win = None
 
 
 def refresh_filter_columns_list():
@@ -558,6 +634,8 @@ def load_data(path: str):
     refresh_setup_tab_options()
     update_filter_options()
     update_status()
+    if splash_win is not None:
+        update_splash(path, "Data loaded.")
 
 
 def prompt_for_file():
@@ -631,6 +709,7 @@ def load_config_file():
         global visible_optional_filter_cols
         visible_optional_filter_cols = optional_cols
         refresh_filter_columns_list()
+        refresh_filtered_hotels()
 
 
 def save_config_file():
@@ -1431,6 +1510,7 @@ root = tk.Tk()
 root.title("Hotel Lookup")
 root.geometry("1150x780")
 ensure_style()
+show_splash()
 
 status_var = tk.StringVar(value="Lade Daten ...")
 
@@ -1717,6 +1797,8 @@ update_filter_options()
 
 # Initial filtered view
 refresh_filtered_hotels()
+
+root.after(120000, close_splash)
 
 # Warm Outlook in the background so the first email opens faster
 root.after(200, warm_outlook_app)
