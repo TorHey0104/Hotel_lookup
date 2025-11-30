@@ -370,7 +370,7 @@ def show_splash():
     splash_file_var = tk.StringVar(value="Loading data file...")
     ttk.Label(container, textvariable=splash_file_var, font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(4, 2))
 
-    splash_status_var = tk.StringVar(value="Initializing...")
+    splash_status_var = tk.StringVar(value=f"{TOOL_NAME} v{VERSION} ({VERSION_DATE})")
     ttk.Label(container, textvariable=splash_status_var, foreground="gray", font=("Segoe UI", 10)).pack(anchor="w")
 
     ttk.Button(container, text="Understood...", command=close_splash).pack(anchor="e", pady=(12, 0), ipadx=8, ipady=3)
@@ -671,6 +671,7 @@ def prompt_for_file():
     )
     if not file_path:
         return
+    update_splash("", f"Loading {os.path.basename(file_path)} ...")
     try:
         load_data(file_path)
         update_splash(file_path, "Data loaded.")
@@ -776,6 +777,7 @@ def save_config_file():
 
 def ensure_initial_data():
     """Load default data file if present, otherwise ask the user."""
+    update_splash("", f"{TOOL_NAME} v{VERSION} ({VERSION_DATE}) - loading default data...")
     if os.path.isfile(DEFAULT_FILE_PATH):
         try:
             load_data(DEFAULT_FILE_PATH)
@@ -1572,8 +1574,31 @@ def reopen_splash():
 
 help_menu = tk.Menu(menubar, tearoff=0)
 help_menu.add_command(label="About / Splash", command=reopen_splash)
-help_menu.add_command(label="Help / README", command=lambda: messagebox.showinfo("Help", "See README.md for instructions and tips."))
 menubar.add_cascade(label="About", menu=help_menu)
+
+def show_readme():
+    readme_path = os.path.join(BASE_DIR, "README.md")
+    content = "README.md not found."
+    if os.path.isfile(readme_path):
+        try:
+            with open(readme_path, "r", encoding="utf-8") as fh:
+                content = fh.read()
+        except Exception as exc:
+            content = f"Could not read README.md:\n{exc}"
+    win = tk.Toplevel(root)
+    win.title("Instructions (README)")
+    win.geometry("760x520")
+    text = tk.Text(win, wrap="word")
+    text.insert("1.0", content)
+    text.config(state="disabled")
+    text.pack(fill="both", expand=True, padx=6, pady=6)
+    scroll = ttk.Scrollbar(win, command=text.yview)
+    text.configure(yscrollcommand=scroll.set)
+    scroll.pack(side="right", fill="y")
+
+help_menu2 = tk.Menu(menubar, tearoff=0)
+help_menu2.add_command(label="Instructions", command=show_readme)
+menubar.add_cascade(label="Help", menu=help_menu2)
 
 root.config(menu=menubar)
 
