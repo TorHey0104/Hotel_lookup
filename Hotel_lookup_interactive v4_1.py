@@ -23,6 +23,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
 import importlib.util
+import glob
+import html
 
 # Cache Outlook availability and instance so email drafting is faster after the first use
 WIN32COM_AVAILABLE = os.name == "nt" and importlib.util.find_spec("win32com.client") is not None
@@ -121,6 +123,7 @@ detail_hotel_name = ""
 detail_status_var = None
 detail_start_email_btn = None
 detail_row_current = None
+signatures_cache = {}
 
 
 def format_timestamp(path: str) -> str:
@@ -232,6 +235,68 @@ def render_template(row: pd.Series, template: str) -> str:
     for key, val in replacements.items():
         rendered = rendered.replace(key, str(val))
     return rendered
+
+
+def load_signatures():
+    """Load Outlook signature texts/html from the default signatures folder."""
+    global signatures_cache
+    if signatures_cache:
+        return signatures_cache
+
+    signatures_cache = {"None": {"html": "", "text": ""}}
+    sig_dir = os.path.join(os.path.expandvars(r"%APPDATA%"), "Microsoft", "Signatures")
+    if not os.path.isdir(sig_dir):
+        return signatures_cache
+
+    base_names = set()
+    for ext in ("*.txt", "*.htm", "*.html"):
+        for path in glob.glob(os.path.join(sig_dir, ext)):
+            base_names.add(os.path.splitext(os.path.basename(path))[0])
+
+    for name in base_names:
+        txt_path = os.path.join(sig_dir, name + ".txt")
+        htm_path = os.path.join(sig_dir, name + ".htm")
+        html_path = os.path.join(sig_dir, name + ".html")
+        sig_entry = {"html": "", "text": ""}
+
+        if os.path.isfile(htm_path):
+            try:
+                with open(htm_path, "r", encoding="utf-8", errors="ignore") as fh:
+                    sig_entry["html"] = fh.read()
+            except Exception:
+                sig_entry["html"] = ""
+        elif os.path.isfile(html_path):
+            try:
+                with open(html_path, "r", encoding="utf-8", errors="ignore") as fh:
+                    sig_entry["html"] = fh.read()
+            except Exception:
+                sig_entry["html"] = ""
+
+        if os.path.isfile(txt_path):
+            try:
+                with open(txt_path, "r", encoding="utf-8", errors="ignore") as fh:
+                    sig_entry["text"] = fh.read().strip()
+            except Exception:
+                sig_entry["text"] = ""
+
+        signatures_cache[name] = sig_entry
+    return signatures_cache
+
+
+def render_with_signature(body_text: str, signature_entry: dict):
+    """Return a dict with either html or text combined with signature."""
+    if not signature_entry:
+        return {"text": body_text}
+    sig_html = signature_entry.get("html", "") if isinstance(signature_entry, dict) else ""
+    sig_txt = signature_entry.get("text", "") if isinstance(signature_entry, dict) else ""
+
+    if sig_html:
+        body_html = html.escape(body_text).replace("\n", "<br>")
+        return {"html": f"<div>{body_html}</div><br>{sig_html}"}
+    elif sig_txt:
+        return {"text": body_text + "\n\n" + sig_txt}
+    else:
+        return {"text": body_text}
 
 
 def ensure_style():
@@ -977,14 +1042,20 @@ def draft_emails_for_selection():
         )
         ttk.Label(dialog, text=placeholder_text, foreground="gray").pack(anchor="w", padx=8, pady=(4, 8))
 
+        sigs = load_signatures()
+        ttk.Label(dialog, text="Signature:").pack(anchor="w", padx=8, pady=(4, 2))
+        sig_var = tk.StringVar(value="None")
+        sig_combo = ttk.Combobox(dialog, textvariable=sig_var, values=list(sigs.keys()), state="readonly")
+        sig_combo.pack(fill="x", padx=8, pady=(0, 6))
+
         def render_and_send():
             subject_template = subj_var.get()
             body_template = body_text.get("1.0", "end").rstrip("\n")
             dialog.destroy()
-            send_emails(subject_template, body_template)
+            send_emails(subject_template, body_template, sigs.get(sig_var.get(), {"html": "", "text": ""}))
         ttk.Button(dialog, text="Create Drafts", command=render_and_send).pack(pady=6)
 
-    def send_emails(subject_template: str, body_template: str):
+    def send_emails(subject_template: str, body_template: str, signature_text: str):
         missing_addresses = []
         brand_col = get_brand_col()
         region_col = get_region_col()
@@ -1016,7 +1087,11 @@ def draft_emails_for_selection():
                 mail_item.BCC = ";".join(bcc_list)
                 hotel_name = row.get("Hotel", "Hotel")
                 mail_item.Subject = render_template(row, subject_template)
-                mail_item.Body = render_template(row, body_template)
+                rendered = render_with_signature(render_template(row, body_template), signature_text)
+                if rendered.get("html"):
+                    mail_item.HTMLBody = rendered["html"]
+                else:
+                    mail_item.Body = rendered.get("text", "")
                 mail_item.Display()
             except Exception as exc:
                 messagebox.showerror("Email Error", f"Could not draft email for {row.get('Hotel', 'Hotel')}: {exc}")
@@ -1191,6 +1266,12 @@ def draft_email_single(checkbox_vars, hotel_name, details_window=None):
         )
         ttk.Label(dialog, text=placeholder_text, foreground="gray").pack(anchor="w", padx=8, pady=(4, 8))
 
+        sigs = load_signatures()
+        ttk.Label(dialog, text="Signature:").pack(anchor="w", padx=8, pady=(4, 2))
+        sig_var = tk.StringVar(value="None")
+        sig_combo = ttk.Combobox(dialog, textvariable=sig_var, values=list(sigs.keys()), state="readonly")
+        sig_combo.pack(fill="x", padx=8, pady=(0, 6))
+
         def send_single():
             subject_template = subj_var.get()
             body_template = body_text.get("1.0", "end").rstrip("\n")
@@ -1229,7 +1310,12 @@ def draft_email_single(checkbox_vars, hotel_name, details_window=None):
             mail_item.BCC = ";".join(bcc_list)
 
             mail_item.Subject = render_template(detail_row_current, subject_template)
-            mail_item.Body = render_template(detail_row_current, body_template)
+            sig_entry = sigs.get(sig_var.get(), {"html": "", "text": ""})
+            rendered = render_with_signature(render_template(detail_row_current, body_template), sig_entry)
+            if rendered.get("html"):
+                mail_item.HTMLBody = rendered["html"]
+            else:
+                mail_item.Body = rendered.get("text", "")
             mail_item.Display()
             if details_window is not None:
                 details_window.destroy()
