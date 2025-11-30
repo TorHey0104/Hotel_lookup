@@ -487,10 +487,32 @@ def load_config_file():
         except Exception as exc:
             messagebox.showerror("Konfiguration", f"Datendatei aus Konfiguration konnte nicht geladen werden:\n{exc}")
 
+    cols = cfg.get("columns", {})
+    def set_if_present(var, key):
+        if var is not None and key in cols and cols.get(key):
+            var.set(cols[key])
+
+    set_if_present(brand_col_var, "brand")
+    set_if_present(brand_band_col_var, "brand_band")
+    set_if_present(region_col_var, "region")
+    set_if_present(relationship_col_var, "relationship")
+    set_if_present(country_col_var, "country")
+    set_if_present(country_fallback_col_var, "country_fallback")
+    set_if_present(city_col_var, "city")
+    set_if_present(hyatt_date_col_var, "hyatt_date")
+    set_if_present(gm_col_var, "gm")
+    set_if_present(eng_col_var, "eng")
+    set_if_present(dof_col_var, "dof")
+    set_if_present(avp_col_var, "avp")
+    set_if_present(md_col_var, "md")
+    set_if_present(reg_eng_spec_col_var, "reg_eng_spec")
+
     roles_cfg = cfg.get("roles", {})
     for role, val in roles_cfg.items():
         if role in role_send_vars and val in ROLE_MODES:
             role_send_vars[role].set(val)
+    refresh_setup_tab_options()
+    apply_column_settings()
     update_selected_tree()
 
 
@@ -921,10 +943,6 @@ def draft_emails_for_selection():
         )
         return
 
-    if detail_row_current is None:
-        messagebox.showinfo("No Hotel", "Bitte zuerst ein Hotel auswaehlen.")
-        return
-
     try:
         outlook = get_outlook_app()
         mail_test = outlook.CreateItem(0)
@@ -1054,6 +1072,8 @@ def lookup(spirit_entry, hotel_var_local):
 
 
 def show_details_gui(row):
+    global detail_row_current
+    detail_row_current = row
     win = tk.Toplevel(root)
     win.title(f"Details for {row.get('Hotel', 'N/A')}")
     win.geometry("700x760")
@@ -1115,7 +1135,8 @@ def show_details_gui(row):
                 var = tk.BooleanVar()
                 chk = ttk.Checkbutton(roles_frame, text=f"{role}: {email_address}", variable=var)
                 chk.grid(row=row_idx, column=0, sticky="w", padx=5, pady=2)
-                checkbox_vars.append((var, str(email_address)))
+                canonical_role = "RegionalEngineeringSpecialist" if role.startswith("Regional") else role
+                checkbox_vars.append((var, str(email_address), canonical_role))
                 row_idx += 1
             else:
                 tk.Label(roles_frame, text=f"{role}: N/A (Email not found)", anchor="w", foreground="gray").grid(
@@ -1406,6 +1427,14 @@ reset_filter_btn.grid(row=0, column=7, sticky="e", padx=8, pady=2)
 lists_pane = ttk.Panedwindow(multi_frame, orient="horizontal")
 lists_pane.pack(fill="both", expand=True, padx=5, pady=5)
 
+# Buttons between filters and panes
+buttons_bar = ttk.Frame(multi_frame)
+buttons_bar.pack(fill="x", padx=5, pady=(0, 5))
+ttk.Button(buttons_bar, text="Select", command=add_selected_hotels).pack(side="left", padx=4)
+ttk.Button(buttons_bar, text="Select All", command=add_all_filtered_hotels).pack(side="left", padx=4)
+ttk.Button(buttons_bar, text="Remove", command=remove_selected_hotels).pack(side="left", padx=4)
+ttk.Button(buttons_bar, text="Remove All", command=clear_selected_hotels).pack(side="left", padx=4)
+
 filtered_frame = ttk.LabelFrame(lists_pane, text="Gefilterte Hotels", padding=5)
 lists_pane.add(filtered_frame, weight=1)
 
@@ -1432,14 +1461,6 @@ for col, width in [
 filtered_tree.pack(fill="both", expand=True)
 filtered_xscroll.pack(fill="x")
 bind_autofit(filtered_tree)
-
-buttons_frame = ttk.Frame(lists_pane)
-buttons_frame.pack(side="left", fill="y")
-
-ttk.Button(buttons_frame, text=">>>", command=add_selected_hotels).pack(pady=8)
-ttk.Button(buttons_frame, text="Remove", command=remove_selected_hotels).pack(pady=8)
-ttk.Button(buttons_frame, text="Clear All", command=clear_selected_hotels).pack(pady=8)
-ttk.Button(buttons_frame, text="Add All Filtered", command=add_all_filtered_hotels).pack(pady=8)
 
 selected_frame = ttk.LabelFrame(lists_pane, text="Ausgewaehlte Hotels", padding=5)
 lists_pane.add(selected_frame, weight=1)
