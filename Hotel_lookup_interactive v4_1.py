@@ -21,6 +21,7 @@ except Exception:
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+import json
 import importlib.util
 
 # Cache Outlook availability and instance so email drafting is faster after the first use
@@ -79,6 +80,7 @@ selected_rows = {}
 current_filtered_indexes = []
 role_send_vars = {}
 ROLE_MODES = ["Skip", "To", "CC", "BCC"]
+style = None
 
 # Column selection vars (set in setup tab)
 brand_col_var = None
@@ -118,7 +120,6 @@ detail_checkbox_vars = []
 detail_hotel_name = ""
 detail_status_var = None
 detail_start_email_btn = None
-detail_row_current = None
 detail_row_current = None
 
 
@@ -231,6 +232,28 @@ def render_template(row: pd.Series, template: str) -> str:
     for key, val in replacements.items():
         rendered = rendered.replace(key, str(val))
     return rendered
+
+
+def ensure_style():
+    """Configure ttk style accents (e.g., active tab highlighting)."""
+    global style
+    if style is None:
+        style = ttk.Style()
+    current_theme = style.theme_use()
+    style.theme_use(current_theme)
+    # Blue accent for active tab
+    style.map("TNotebook.Tab", background=[("selected", "#1f4fa3")], foreground=[("selected", "white")])
+    style.configure("TNotebook.Tab", padding=(8, 4))
+
+
+def add_role_selector(parent, role_name, default_mode="Skip"):
+    var = tk.StringVar(value=default_mode)
+    cb = ttk.Combobox(parent, textvariable=var, values=ROLE_MODES, state="readonly", width=10)
+    cb.bind("<<ComboboxSelected>>", lambda e: update_selected_tree())
+    role_send_vars[role_name] = var
+    row = len(parent.grid_slaves()) // 2
+    ttk.Label(parent, text=role_name).grid(row=row, column=0, sticky="w", padx=4, pady=2)
+    cb.grid(row=row, column=1, sticky="w", padx=4, pady=2)
 
 
 def get_country_value(row: pd.Series) -> str:
@@ -440,6 +463,72 @@ def prompt_for_file():
         load_data(file_path)
     except Exception as exc:
         messagebox.showerror("Laden fehlgeschlagen", f"Die Datei konnte nicht geladen werden:\n{exc}")
+
+
+def load_config_file():
+    """Load configuration JSON (data file path and role routing)."""
+    config_path = filedialog.askopenfilename(
+        title="Konfiguration laden",
+        filetypes=[("JSON files", "*.json"), ("Alle Dateien", "*.*")],
+    )
+    if not config_path:
+        return
+    try:
+        with open(config_path, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except Exception as exc:
+        messagebox.showerror("Konfiguration", f"Konfigurationsdatei konnte nicht gelesen werden:\n{exc}")
+        return
+
+    data_path = cfg.get("data_file_path")
+    if data_path:
+        try:
+            load_data(data_path)
+        except Exception as exc:
+            messagebox.showerror("Konfiguration", f"Datendatei aus Konfiguration konnte nicht geladen werden:\n{exc}")
+
+    roles_cfg = cfg.get("roles", {})
+    for role, val in roles_cfg.items():
+        if role in role_send_vars and val in ROLE_MODES:
+            role_send_vars[role].set(val)
+    update_selected_tree()
+
+
+def save_config_file():
+    """Save configuration (data file path, column mapping, role routing) to JSON."""
+    config_path = filedialog.asksaveasfilename(
+        title="Konfiguration speichern",
+        defaultextension=".json",
+        filetypes=[("JSON files", "*.json"), ("Alle Dateien", "*.*")],
+    )
+    if not config_path:
+        return
+
+    cfg = {
+        "data_file_path": data_file_path,
+        "columns": {
+            "brand": get_brand_col(),
+            "brand_band": get_brand_band_col(),
+            "region": get_region_col(),
+            "relationship": get_relationship_col(),
+            "country": get_country_col(),
+            "country_fallback": get_country_fallback_col(),
+            "city": get_city_col(),
+            "hyatt_date": get_hyatt_date_col(),
+            "gm": get_gm_col(),
+            "eng": get_eng_col(),
+            "dof": get_dof_col(),
+            "avp": get_avp_col(),
+            "md": get_md_col(),
+            "reg_eng_spec": get_reg_eng_spec_col(),
+        },
+        "roles": {role: var.get() for role, var in role_send_vars.items()},
+    }
+    try:
+        with open(config_path, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2)
+    except Exception as exc:
+        messagebox.showerror("Konfiguration", f"Konfiguration konnte nicht gespeichert werden:\n{exc}")
 
 
 def ensure_initial_data():
@@ -790,6 +879,23 @@ def get_role_addresses(row: pd.Series, role_key: str):
             for email in normalize_emails(raw):
                 emails.append(email)
     return emails
+
+
+def bind_autofit(tree: ttk.Treeview, min_width: int = 60):
+    """Bind a resize handler to auto-distribute column widths."""
+    if tree is None:
+        return
+
+    def _on_config(event):
+        cols = tree["columns"]
+        if not cols:
+            return
+        total = max(event.width - 20, len(cols) * min_width)
+        per = total // len(cols)
+        for col in cols:
+            tree.column(col, width=per, stretch=True)
+
+    tree.bind("<Configure>", _on_config)
 
 
 def draft_emails_for_selection():
@@ -1163,6 +1269,7 @@ def show_search_results(results_df):
 root = tk.Tk()
 root.title("Hotel Lookup")
 root.geometry("1150x780")
+ensure_style()
 
 status_var = tk.StringVar(value="Lade Daten ...")
 
@@ -1186,6 +1293,8 @@ reg_eng_spec_col_var = tk.StringVar(value="None")
 menubar = tk.Menu(root)
 file_menu = tk.Menu(menubar, tearoff=0)
 file_menu.add_command(label="Datendatei oeffnen", command=prompt_for_file)
+file_menu.add_command(label="Konfiguration laden", command=load_config_file)
+file_menu.add_command(label="Konfiguration speichern", command=save_config_file)
 file_menu.add_separator()
 file_menu.add_command(label="Beenden", command=root.quit)
 menubar.add_cascade(label="Datei", menu=file_menu)
@@ -1294,11 +1403,11 @@ apply_filter_btn.grid(row=0, column=6, sticky="e", padx=8, pady=2)
 reset_filter_btn = ttk.Button(filters_frame, text="Reset Filters", command=reset_filters)
 reset_filter_btn.grid(row=0, column=7, sticky="e", padx=8, pady=2)
 
-lists_frame = ttk.Frame(multi_frame)
-lists_frame.pack(fill="both", expand=True, padx=5, pady=5)
+lists_pane = ttk.Panedwindow(multi_frame, orient="horizontal")
+lists_pane.pack(fill="both", expand=True, padx=5, pady=5)
 
-filtered_frame = ttk.LabelFrame(lists_frame, text="Gefilterte Hotels", padding=5)
-filtered_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
+filtered_frame = ttk.LabelFrame(lists_pane, text="Gefilterte Hotels", padding=5)
+lists_pane.add(filtered_frame, weight=1)
 
 filtered_tree = ttk.Treeview(
     filtered_frame,
@@ -1306,6 +1415,8 @@ filtered_tree = ttk.Treeview(
     show="headings",
     selectmode="extended",
 )
+filtered_xscroll = ttk.Scrollbar(filtered_frame, orient="horizontal", command=filtered_tree.xview)
+filtered_tree.configure(xscrollcommand=filtered_xscroll.set)
 for col, width in [
     ("Spirit", 80),
     ("Hotel", 220),
@@ -1319,8 +1430,10 @@ for col, width in [
     filtered_tree.heading(col, text=col)
     filtered_tree.column(col, width=width, stretch=True)
 filtered_tree.pack(fill="both", expand=True)
+filtered_xscroll.pack(fill="x")
+bind_autofit(filtered_tree)
 
-buttons_frame = ttk.Frame(lists_frame)
+buttons_frame = ttk.Frame(lists_pane)
 buttons_frame.pack(side="left", fill="y")
 
 ttk.Button(buttons_frame, text=">>>", command=add_selected_hotels).pack(pady=8)
@@ -1328,8 +1441,8 @@ ttk.Button(buttons_frame, text="Remove", command=remove_selected_hotels).pack(pa
 ttk.Button(buttons_frame, text="Clear All", command=clear_selected_hotels).pack(pady=8)
 ttk.Button(buttons_frame, text="Add All Filtered", command=add_all_filtered_hotels).pack(pady=8)
 
-selected_frame = ttk.LabelFrame(lists_frame, text="Ausgewaehlte Hotels", padding=5)
-selected_frame.pack(side="left", fill="both", expand=True, padx=(5, 0))
+selected_frame = ttk.LabelFrame(lists_pane, text="Ausgewaehlte Hotels", padding=5)
+lists_pane.add(selected_frame, weight=1)
 
 selected_tree = ttk.Treeview(
     selected_frame,
@@ -1337,6 +1450,8 @@ selected_tree = ttk.Treeview(
     show="headings",
     selectmode="extended",
 )
+selected_xscroll = ttk.Scrollbar(selected_frame, orient="horizontal", command=selected_tree.xview)
+selected_tree.configure(xscrollcommand=selected_xscroll.set)
 for col, width in [
     ("Spirit", 80),
     ("Hotel", 220),
@@ -1345,33 +1460,11 @@ for col, width in [
     selected_tree.heading(col, text=col)
     selected_tree.column(col, width=width, stretch=True)
 selected_tree.pack(fill="both", expand=True)
+selected_xscroll.pack(fill="x")
+bind_autofit(selected_tree)
 
-roles_frame = ttk.LabelFrame(multi_frame, text="Empfaengerrollen", padding=10)
-roles_frame.pack(fill="x", padx=5, pady=5)
-
-role_send_vars = {}
-
-
-def add_role_selector(parent, role_name, default_mode="Skip"):
-    var = tk.StringVar(value=default_mode)
-    cb = ttk.Combobox(parent, textvariable=var, values=ROLE_MODES, state="readonly", width=10)
-    cb.bind("<<ComboboxSelected>>", lambda e: update_selected_tree())
-    role_send_vars[role_name] = var
-    row = len(parent.grid_slaves()) // 2
-    ttk.Label(parent, text=role_name).grid(row=row, column=0, sticky="w", padx=4, pady=2)
-    cb.grid(row=row, column=1, sticky="w", padx=4, pady=2)
-
-
-roles_frame.columnconfigure(1, weight=1)
-add_role_selector(roles_frame, "AVP", "Skip")
-add_role_selector(roles_frame, "MD", "Skip")
-add_role_selector(roles_frame, "GM", "To")
-add_role_selector(roles_frame, "Engineering", "CC")
-add_role_selector(roles_frame, "DOF", "CC")
-add_role_selector(roles_frame, "RegionalEngineeringSpecialist", "CC")
-
-draft_btn = ttk.Button(roles_frame, text="Draft Emails in Outlook", command=draft_emails_for_selection)
-draft_btn.grid(row=0, column=3, rowspan=3, sticky="e", padx=8)
+draft_btn = ttk.Button(multi_frame, text="Draft Emails in Outlook", command=draft_emails_for_selection)
+draft_btn.pack(anchor="e", padx=8, pady=6)
 
 # ---------------------------------------------------------------------------
 # Tab 3: Setup
@@ -1429,6 +1522,16 @@ for idx, (text, combo) in enumerate(labels_roles):
     ttk.Label(roles_setup, text=text).grid(row=idx, column=0, sticky="w", padx=5, pady=2)
     combo.grid(row=idx, column=1, sticky="ew", padx=5, pady=2)
 roles_setup.columnconfigure(1, weight=1)
+
+role_delivery = ttk.LabelFrame(setup_frame, text="Role Delivery (To/CC/BCC)", padding=10)
+role_delivery.pack(fill="x", padx=5, pady=5)
+role_delivery.columnconfigure(1, weight=1)
+add_role_selector(role_delivery, "AVP", "Skip")
+add_role_selector(role_delivery, "MD", "Skip")
+add_role_selector(role_delivery, "GM", "To")
+add_role_selector(role_delivery, "Engineering", "CC")
+add_role_selector(role_delivery, "DOF", "CC")
+add_role_selector(role_delivery, "RegionalEngineeringSpecialist", "CC")
 
 apply_columns_btn = ttk.Button(setup_frame, text="Apply column mapping", command=apply_column_settings)
 apply_columns_btn.pack(anchor="e", padx=5, pady=10)
