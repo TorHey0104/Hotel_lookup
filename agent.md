@@ -29,3 +29,5 @@ python "Hotel_lookup_interactive v4_2_2.py"
 - Add automated tests (UI harness) if feasible.
 - Improve logging for load/config errors.
 - Consider bundling dependencies to avoid first-run installs.
+- When cutting a new version, bump `VERSION` and `VERSION_DATE` near the top of `Hotel_lookup_interactive vX.py` so the splash and status text show the correct release info.
+- As part of the release checklist, open the app once to confirm the splash displays the new version string and date.

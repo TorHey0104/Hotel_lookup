@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = os.path.join(BASE_DIR, "hyatt_logo.png")  # optional logo next to script
 
 TOOL_NAME = "Hyatt EAME Hotel Lookup and Multi E-Mail Tool"
-VERSION = "4.2.1"
+VERSION = "4.2.2"
 VERSION_DATE = date.today().strftime("%d.%m.%Y")
 
 # Default column names (can be overridden in Setup tab)
