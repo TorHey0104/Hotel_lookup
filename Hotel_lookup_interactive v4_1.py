@@ -118,6 +118,8 @@ detail_checkbox_vars = []
 detail_hotel_name = ""
 detail_status_var = None
 detail_start_email_btn = None
+detail_row_current = None
+detail_row_current = None
 
 
 def format_timestamp(path: str) -> str:
@@ -205,6 +207,30 @@ def normalize_emails(raw: str):
             continue
         parts.append(email)
     return parts
+
+
+def render_template(row: pd.Series, template: str) -> str:
+    """Replace placeholders in a template string using row values."""
+    brand_col = get_brand_col()
+    region_col = get_region_col()
+    relationship_col = get_relationship_col()
+    brand_band_col = get_brand_band_col()
+    replacements = {
+        "{hotel}": row.get("Hotel", ""),
+        "{spirit_code}": row.get("Spirit Code", ""),
+        "{city}": get_city_value(row),
+        "{relationship}": row.get(relationship_col, "") if relationship_col in row else "",
+        "{brand}": row.get(brand_col, "") if brand_col in row else "",
+        "{brand_band}": row.get(brand_band_col, "") if brand_band_col in row else "",
+        "{region}": row.get(region_col, "") if region_col in row else "",
+        "{country}": get_country_value(row),
+        "{owner}": row.get("Owner", ""),
+        "{rooms}": row.get("Rooms", ""),
+    }
+    rendered = template
+    for key, val in replacements.items():
+        rendered = rendered.replace(key, str(val))
+    return rendered
 
 
 def get_country_value(row: pd.Series) -> str:
@@ -519,9 +545,10 @@ def clear_detail_panel(message: str = "Select a hotel to view details."):
 
 def populate_detail_panel(row: pd.Series):
     """Fill detail panel with hotel info and role checkboxes."""
-    global detail_checkbox_vars, detail_hotel_name
+    global detail_checkbox_vars, detail_hotel_name, detail_row_current
     detail_checkbox_vars = []
     detail_hotel_name = row.get("Hotel", "N/A")
+    detail_row_current = row
 
     if detail_status_var is not None:
         detail_status_var.set(f"Details loaded for: {detail_hotel_name}")
@@ -567,7 +594,8 @@ def populate_detail_panel(row: pd.Series):
                 var = tk.BooleanVar()
                 chk = ttk.Checkbutton(detail_roles_frame, text=f"{role}: {email_address}", variable=var)
                 chk.pack(anchor="w", pady=1)
-                detail_checkbox_vars.append((var, str(email_address)))
+                canonical_role = "RegionalEngineeringSpecialist" if role.startswith("Regional") else role
+                detail_checkbox_vars.append((var, str(email_address), canonical_role))
             else:
                 ttk.Label(detail_roles_frame, text=f"{role}: N/A (Email not found)", foreground="gray").pack(anchor="w")
 
@@ -787,6 +815,10 @@ def draft_emails_for_selection():
         )
         return
 
+    if detail_row_current is None:
+        messagebox.showinfo("No Hotel", "Bitte zuerst ein Hotel auswaehlen.")
+        return
+
     try:
         outlook = get_outlook_app()
         mail_test = outlook.CreateItem(0)
@@ -826,30 +858,7 @@ def draft_emails_for_selection():
             body_template = body_text.get("1.0", "end").rstrip("\n")
             dialog.destroy()
             send_emails(subject_template, body_template)
-
         ttk.Button(dialog, text="Create Drafts", command=render_and_send).pack(pady=6)
-
-    def render_placeholders(row, template: str) -> str:
-        brand_col = get_brand_col()
-        region_col = get_region_col()
-        relationship_col = get_relationship_col()
-        brand_band_col = get_brand_band_col()
-        replacements = {
-            "{hotel}": row.get("Hotel", ""),
-            "{spirit_code}": row.get("Spirit Code", ""),
-            "{city}": get_city_value(row),
-            "{relationship}": row.get(relationship_col, "") if relationship_col in row else "",
-            "{brand}": row.get(brand_col, "") if brand_col in row else "",
-            "{brand_band}": row.get(brand_band_col, "") if brand_band_col in row else "",
-            "{region}": row.get(region_col, "") if region_col in row else "",
-            "{country}": get_country_value(row),
-            "{owner}": row.get("Owner", ""),
-            "{rooms}": row.get("Rooms", ""),
-        }
-        rendered = template
-        for key, val in replacements.items():
-            rendered = rendered.replace(key, str(val))
-        return rendered
 
     def send_emails(subject_template: str, body_template: str):
         missing_addresses = []
@@ -882,9 +891,8 @@ def draft_emails_for_selection():
                 mail_item.CC = ";".join(cc_list)
                 mail_item.BCC = ";".join(bcc_list)
                 hotel_name = row.get("Hotel", "Hotel")
-                mail_item.Subject = render_placeholders(row, subject_template)
-                rendered_body = render_placeholders(row, body_template)
-                mail_item.Body = rendered_body
+                mail_item.Subject = render_template(row, subject_template)
+                mail_item.Body = render_template(row, body_template)
                 mail_item.Display()
             except Exception as exc:
                 messagebox.showerror("Email Error", f"Could not draft email for {row.get('Hotel', 'Hotel')}: {exc}")
@@ -897,12 +905,6 @@ def draft_emails_for_selection():
             )
 
     open_message_dialog()
-
-    if missing_addresses:
-        messagebox.showinfo(
-            "Keine Empfaenger",
-            "Fuer folgende Hotels wurden keine E-Mail-Adressen in den gewaehlten Rollen gefunden:\n" + "\n".join(missing_addresses),
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -1027,15 +1029,6 @@ def show_details_gui(row):
 
 
 def draft_email_single(checkbox_vars, hotel_name, details_window=None):
-    recipients = []
-    for var, email in checkbox_vars:
-        if var.get() and email:
-            recipients.extend(normalize_emails(email))
-
-    if not recipients:
-        messagebox.showinfo("No Recipients", "No email addresses selected.")
-        return
-
     if os.name != "nt":
         messagebox.showerror("Unsupported Platform", "Outlook email drafting is only available on Windows.")
         return
@@ -1047,23 +1040,76 @@ def draft_email_single(checkbox_vars, hotel_name, details_window=None):
         )
         return
 
-    try:
-        outlook = get_outlook_app()
-        mail_item = outlook.CreateItem(0)
-    except Exception:
-        try:
-            outlook = get_outlook_app(force_refresh=True)
-            mail_item = outlook.CreateItem(0)
-        except Exception as exc:  # pragma: no cover - Outlook automation is Windows-specific
-            messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
-            _outlook_app = None
-            return
+    # Compose dialog for single email
+    def open_single_template():
+        dialog = tk.Toplevel(root)
+        dialog.title("Compose Email Template (Single Hotel)")
+        dialog.geometry("480x320")
+        ttk.Label(dialog, text="Subject (supports placeholders):").pack(anchor="w", padx=8, pady=(8, 2))
+        subj_var = tk.StringVar(value="Hotel Information for {hotel}")
+        subj_entry = ttk.Entry(dialog, textvariable=subj_var)
+        subj_entry.pack(fill="x", padx=8)
 
-    mail_item.To = ";".join(recipients)
-    mail_item.Subject = f"Hotel Information for {hotel_name}"
-    mail_item.Display()
-    if details_window is not None:
-        details_window.destroy()
+        ttk.Label(dialog, text="Body (supports placeholders):").pack(anchor="w", padx=8, pady=(8, 2))
+        body_text = tk.Text(dialog, height=8)
+        body_text.pack(fill="both", expand=True, padx=8)
+        body_text.insert(
+            "1.0",
+            "Hotel: {hotel}\nSpirit: {spirit_code}\nCity: {city}\nBrand: {brand}\n\nYour message here.",
+        )
+
+        placeholder_text = (
+            "Placeholders: {hotel}, {spirit_code}, {city}, {relationship}, {brand}, {brand_band}, "
+            "{region}, {country}, {owner}, {rooms}"
+        )
+        ttk.Label(dialog, text=placeholder_text, foreground="gray").pack(anchor="w", padx=8, pady=(4, 8))
+
+        def send_single():
+            subject_template = subj_var.get()
+            body_template = body_text.get("1.0", "end").rstrip("\n")
+            dialog.destroy()
+
+            try:
+                outlook = get_outlook_app()
+                mail_item = outlook.CreateItem(0)
+            except Exception:
+                try:
+                    outlook = get_outlook_app(force_refresh=True)
+                    mail_item = outlook.CreateItem(0)
+                except Exception as exc:  # pragma: no cover - Outlook automation is Windows-specific
+                    messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
+                    return
+
+            to_list, cc_list, bcc_list = [], [], []
+            for var, email, role_key in checkbox_vars:
+                if var.get() and email:
+                    emails = normalize_emails(email)
+                    mode = role_send_vars.get(role_key).get() if role_key in role_send_vars else "To"
+                    if mode == "To":
+                        to_list.extend(emails)
+                    elif mode == "CC":
+                        cc_list.extend(emails)
+                    elif mode == "BCC":
+                        bcc_list.extend(emails)
+
+            all_recips = [r for r in to_list + cc_list + bcc_list if r]
+            if not all_recips:
+                messagebox.showinfo("No Recipients", "No email addresses selected.")
+                return
+
+            mail_item.To = ";".join(to_list)
+            mail_item.CC = ";".join(cc_list)
+            mail_item.BCC = ";".join(bcc_list)
+
+            mail_item.Subject = render_template(detail_row_current, subject_template)
+            mail_item.Body = render_template(detail_row_current, body_template)
+            mail_item.Display()
+            if details_window is not None:
+                details_window.destroy()
+
+        ttk.Button(dialog, text="Create Draft", command=send_single).pack(pady=6)
+
+    open_single_template()
 
 
 def show_search_results(results_df):
