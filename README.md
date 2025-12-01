@@ -1,6 +1,6 @@
 # Hyatt EAME Hotel Lookup and Multi E-Mail Tool
 
-Version: 4.2.2
+Version: 5.0.0
 
 ## Requirements
 - Python 3.x on Windows
@@ -9,13 +9,14 @@ Version: 4.2.2
 
 ## Running
 ```bash
-python "Hotel_lookup_interactive v4_2_2.py"
+python "Hotel_lookup_interactive v5.py"
 ```
 
 ## Key Features
 - Single hotel lookup and multi-hotel selection with filters.
 - Role-based recipient routing (To/CC/BCC) for GM, Engineering, DOF, AVP, MD, Regional Eng Specialist.
 - Outlook draft creation with placeholder-enabled subject/body and optional Outlook signature insertion.
+- Attachments: optional root folder with `Common` attachments (applied to all) and per-Spirit Code attachments (folder name = spirit code).
 - Configurable column mappings and visible columns for the filtered list (saved/loaded via JSON config).
 - Splash screen showing version/author/file status while loading.
 
@@ -29,6 +30,7 @@ python "Hotel_lookup_interactive v4_2_2.py"
 ## Tips
 - Place `hyatt_logo.png` next to the script to show the logo on the splash.
 - Use About → About / Splash to reopen the splash info.
+- Enable attachments in the Setup tab and browse to the attachment root; ensure `Common` and `Spirit` subfolders exist.
 
 ## Testing
 No automated tests are included. Manual checks recommended:

@@ -1,0 +1,1 @@
+No automated tests yet; manual attachment verification required.
