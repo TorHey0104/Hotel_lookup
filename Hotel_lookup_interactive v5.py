@@ -141,6 +141,8 @@ attachments_enabled_var = None
 attachments_root_var = None
 attachments_common_dir = "Common"
 attachments_spirit_dir = "Spirit"
+single_attachments_enabled_var = None
+single_attachments_root_var = None
 
 # Visible columns for filtered hotels
 MANDATORY_FILTER_COLS = ["Spirit Code", "Hotel"]
@@ -1543,9 +1545,9 @@ def draft_email_single(checkbox_vars, hotel_name, details_window=None):
                 mail_item.HTMLBody = rendered["html"]
             else:
                 mail_item.Body = rendered.get("text", "")
-            # Attach files if enabled
-            attach_enabled = attachments_enabled_var.get() if attachments_enabled_var else False
-            attach_root = attachments_root_var.get() if attachments_root_var else ""
+            # Attach files if enabled (lookup-tab specific)
+            attach_enabled = single_attachments_enabled_var.get() if single_attachments_enabled_var else False
+            attach_root = single_attachments_root_var.get() if single_attachments_root_var else ""
             if attach_enabled:
                 attach_files_for_hotel(mail_item, attach_root, str(detail_row_current.get("Spirit Code", "")).strip())
             mail_item.Display()
@@ -1710,6 +1712,23 @@ hotel_combo.bind("<KeyRelease>", on_hotel_keyrelease)
 
 search_button = tk.Button(lookup_form, text="Search", command=lambda: lookup(spirit_entry, hotel_var))
 search_button.grid(row=2, column=0, columnspan=2, pady=10)
+
+single_attach_frame = ttk.LabelFrame(lookup_form, text="Attachments (single email)", padding=8)
+single_attach_frame.grid(row=3, column=0, columnspan=2, sticky="we", padx=2, pady=6)
+single_attachments_enabled_var = tk.BooleanVar(value=False)
+single_attachments_root_var = tk.StringVar(value="")
+ttk.Checkbutton(single_attach_frame, text="Enable attachments for single email", variable=single_attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
+ttk.Label(single_attach_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
+single_attach_entry = ttk.Entry(single_attach_frame, textvariable=single_attachments_root_var, width=40)
+single_attach_entry.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
+
+def browse_single_attach_root():
+    sel = filedialog.askdirectory(title="Choose attachments root (single email)")
+    if sel:
+        single_attachments_root_var.set(sel)
+
+ttk.Button(single_attach_frame, text="Browse", command=browse_single_attach_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
+single_attach_frame.columnconfigure(1, weight=1)
 
 detail_container = ttk.Frame(lookup_frame)
 detail_container.grid(row=0, column=1, sticky="nsew")
