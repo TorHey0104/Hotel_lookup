@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import os
 from datetime import datetime
 
@@ -44,7 +44,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = os.path.join(BASE_DIR, "hyatt_logo.png")  # optional logo next to script
 
 TOOL_NAME = "Hyatt EAME Hotel Lookup and Multi E-Mail Tool"
-VERSION = "5.0.0"
+VERSION = "5.0.1"
 VERSION_DATE = date.today().strftime("%d.%m.%Y")
 
 # Default column names (can be overridden in Setup tab)
@@ -331,62 +331,8 @@ def browse_attachments_root():
 
 
 def capture_outlook_selection():
-    """Capture the currently selected Outlook email (subject, body, attachments) to forward."""
-    if os.name != "nt" or not WIN32COM_AVAILABLE:
-        messagebox.showerror("Outlook", "Capturing emails requires Outlook on Windows with pywin32 installed.")
-        return
-    try:
-        outlook = get_outlook_app()
-        explorer = outlook.ActiveExplorer()
-        selection = explorer.Selection if explorer else None
-        if (not selection or selection.Count == 0) and explorer is None:
-            # Retry with a fresh Outlook instance
-            outlook = get_outlook_app(force_refresh=True)
-            explorer = outlook.ActiveExplorer()
-            selection = explorer.Selection if explorer else None
-        if not selection or selection.Count == 0:
-            messagebox.showinfo("Outlook", "Please select an email in Outlook first.")
-            return
-        item = selection.Item(1)
-    except Exception as exc:
-        messagebox.showerror("Outlook", f"Could not read selected email: {exc}")
-        return
-
-    forward_template["subject"] = f"FW: {getattr(item, 'Subject', '')}"
-    html_body = getattr(item, "HTMLBody", "") or ""
-    plain_body = getattr(item, "Body", "") or ""
-    forward_template["body_text"] = html_body if html_body else plain_body
-    forward_template["is_html"] = bool(html_body)
-    # Clean attachments temp dir
-    if forward_template.get("temp_dir") and os.path.isdir(forward_template["temp_dir"]):
-        try:
-            for path in glob.glob(os.path.join(forward_template["temp_dir"], "*")):
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    temp_dir = tempfile.mkdtemp(prefix="forward_src_")
-    forward_template["temp_dir"] = temp_dir
-    forward_template["attachments"] = []
-    try:
-        atts = item.Attachments
-    except Exception:
-        atts = None
-    if atts:
-        for i in range(1, atts.Count + 1):
-            att = atts.Item(i)
-            try:
-                save_path = os.path.join(temp_dir, att.FileName)
-                att.SaveAsFile(save_path)
-                forward_template["attachments"].append(save_path)
-            except Exception:
-                pass
-    msg = f"Captured email:\nSubject: {forward_template['subject']}\nAttachments: {len(forward_template['attachments'])}"
-    if forward_status_var is not None:
-        forward_status_var.set(msg.replace("\n", " | "))
-    messagebox.showinfo("Outlook", msg)
+    """Deprecated: selection-based capture removed in v5.0.1."""
+    messagebox.showinfo("Outlook", "This option has been removed. Please use ''Browse Outlook...'' instead.")
 
 def clear_forward_template():
     """Clear cached forward email content/attachments."""
@@ -1571,8 +1517,6 @@ def draft_emails_for_selection():
         forward_is_html: bool = False,
     ):
         missing_addresses = []
-        brand_col = get_brand_col()
-        region_col = get_region_col()
         attach_enabled = attachments_enabled_var.get() if attachments_enabled_var else False
         attach_root = attachments_root_var.get() if attachments_root_var else ""
         # If forwarding, ignore signatures to prevent Outlook from stripping the forwarded body
@@ -2114,7 +2058,6 @@ root.minsize(1150, 820)
 forward_bar = ttk.Frame(multi_frame)
 forward_bar.pack(fill="x", padx=5, pady=(0, 6))
 forward_status_var = tk.StringVar(value="No source email captured.")
-ttk.Button(forward_bar, text="Use selected Outlook email as template", command=capture_outlook_selection).pack(side="left", padx=4)
 ttk.Button(forward_bar, text="Browse Outlook...", command=browse_outlook_email).pack(side="left", padx=4)
 ttk.Button(forward_bar, text="Clear Forward", command=clear_forward_template).pack(side="left", padx=4)
 ttk.Label(forward_bar, textvariable=forward_status_var, foreground="gray").pack(side="left", padx=8)
@@ -2355,3 +2298,4 @@ root.after(120000, close_splash)
 root.after(200, warm_outlook_app)
 
 root.mainloop()
+

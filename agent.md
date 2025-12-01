@@ -32,3 +32,4 @@ python "Hotel_lookup_interactive v4_2_2.py"
 - When cutting a new version, bump `VERSION` and `VERSION_DATE` near the top of `Hotel_lookup_interactive vX.py` so the splash and status text show the correct release info.
 - As part of the release checklist, open the app once to confirm the splash displays the new version string and date.
 - Attachments (v5+): support Common and Spirit-code-specific attachments under a user-selected root; folders named `Common` and `Spirit/<SpiritCode>` are expected.
+- Forward assist (v5+): capture an Outlook email (selected in Outlook or browsed by subject in Inbox/Sent). Captured subject is prefixed with `FW:`; body (HTML or text) and attachments are reused in drafts ahead of app attachments.

@@ -16,6 +16,7 @@ python "Hotel_lookup_interactive v5.py"
 - Single hotel lookup and multi-hotel selection with filters.
 - Role-based recipient routing (To/CC/BCC) for GM, Engineering, DOF, AVP, MD, Regional Eng Specialist.
 - Outlook draft creation with placeholder-enabled subject/body and optional Outlook signature insertion.
+- Forward assist: capture an Outlook email (selected in Outlook or via browse/search in Inbox/Sent) to reuse its subject/body (prefixed with `FW:`) and attachments.
 - Attachments: optional root folder with `Common` attachments (applied to all) and per-Spirit Code attachments (folder name = spirit code).
 - Configurable column mappings and visible columns for the filtered list (saved/loaded via JSON config).
 - Splash screen showing version/author/file status while loading.
