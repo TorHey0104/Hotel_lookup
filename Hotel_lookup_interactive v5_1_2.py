@@ -46,7 +46,7 @@ LOGO_PATH = os.path.join(BASE_DIR, "hyatt_logo.png")  # optional logo next to sc
 RECENT_CONFIG_PATH = os.path.join(BASE_DIR, "recent_configs.json")
 
 TOOL_NAME = "Hyatt EAME Hotel Lookup and Multi E-Mail Tool"
-VERSION = "5.1.2"
+VERSION = "5.2.0"
 VERSION_DATE = date.today().strftime("%d.%m.%Y")
 
 # Default column names (can be overridden in Setup tab)
@@ -141,6 +141,13 @@ splash_status_var = None
 splash_file_var = None
 splash_logo_img = None
 config_prompted = False
+# Single compose UI state
+single_compose_frame = None
+single_subj_var = None
+single_body_text = None
+single_sig_var = None
+single_recipient_controls = []
+single_recips_frame = None
 # Attachments
 attachments_enabled_var = None
 attachments_root_var = None
@@ -578,6 +585,170 @@ def render_with_signature(body_text: str, signature_entry: dict, body_is_html: b
         combined += "\n\n" + forward_html
     return {"text": combined}
 
+
+def clear_single_compose():
+    """Reset single-email compose fields."""
+    global single_recipient_controls
+    if single_subj_var is not None:
+        single_subj_var.set("")
+    if single_body_text is not None:
+        single_body_text.delete("1.0", "end")
+    if single_sig_var is not None:
+        single_sig_var.set("None")
+    if single_recips_frame is not None:
+        for widget in single_recips_frame.winfo_children():
+            widget.destroy()
+    single_recipient_controls = []
+
+
+def update_single_compose(row: pd.Series):
+    """Populate single-email compose UI with the selected hotel."""
+    if single_subj_var is None or single_body_text is None:
+        return
+    hotel_name = row.get("Hotel", "Hotel")
+    single_subj_var.set(f"Hotel Information for {hotel_name}")
+    body_template = "Hotel: {hotel}\nSpirit: {spirit_code}\nCity: {city}\nBrand: {brand}\n\nYour message here."
+    single_body_text.delete("1.0", "end")
+    single_body_text.insert("1.0", render_template(row, body_template))
+
+    # Recipients
+    if single_recips_frame is not None:
+        for widget in single_recips_frame.winfo_children():
+            widget.destroy()
+    single_recipient_controls.clear()
+    roles_to_col = {
+        "AVP": get_avp_col(),
+        "MD": get_md_col(),
+        "GM": get_gm_col(),
+        "Engineering": get_eng_col(),
+        "DOF": get_dof_col(),
+        "Regional Eng Specialist": get_reg_eng_spec_col(),
+    }
+    for role, col in roles_to_col.items():
+        if not col:
+            continue
+        email = row.get(col)
+        if col in row.index and pd.notna(email):
+            sel = tk.BooleanVar(value=True)
+            mode = tk.StringVar(value="To")
+            ttk.Checkbutton(single_recips_frame, text=f"{role}: {email}", variable=sel).pack(anchor="w", pady=1)
+            ttk.Combobox(single_recips_frame, textvariable=mode, values=["To", "CC", "BCC"], state="readonly", width=6).pack(anchor="w", padx=4, pady=(0, 4))
+            canonical = "RegionalEngineeringSpecialist" if role.startswith("Regional") else role
+            single_recipient_controls.append((sel, mode, email, canonical))
+        else:
+            ttk.Label(single_recips_frame, text=f"{role}: N/A", foreground="gray").pack(anchor="w")
+
+
+def send_single_inline():
+    """Draft single email using inline compose UI."""
+    if detail_row_current is None:
+        messagebox.showinfo("Keine Auswahl", "Bitte zuerst ein Hotel auswaehlen.")
+        return
+    if os.name != "nt":
+        messagebox.showerror("Unsupported Platform", "Outlook email drafting is only available on Windows.")
+        return
+    if not WIN32COM_AVAILABLE:
+        messagebox.showerror("Outlook Not Available", "This feature requires Microsoft Outlook and 'pywin32' (win32com.client).")
+        return
+    try:
+        outlook = get_outlook_app()
+        mail_item = outlook.CreateItem(0)
+        try:
+            mail_item.BodyFormat = 2  # olFormatHTML
+        except Exception:
+            pass
+    except Exception as exc:
+        messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
+        return
+
+    to_list, cc_list, bcc_list = [], [], []
+    for sel_var, mode_var, email, role_key in single_recipient_controls:
+        if sel_var.get() and email:
+            for em in normalize_emails(email):
+                mode = mode_var.get()
+                if mode == "To":
+                    to_list.append(em)
+                elif mode == "CC":
+                    cc_list.append(em)
+                elif mode == "BCC":
+                    bcc_list.append(em)
+    if not (to_list or cc_list or bcc_list):
+        messagebox.showinfo("No Recipients", "No recipients selected.")
+        return
+
+    mail_item.To = ";".join(to_list)
+    mail_item.CC = ";".join(cc_list)
+    mail_item.BCC = ";".join(bcc_list)
+
+    subject_template = single_subj_var.get()
+    body_template = single_body_text.get("1.0", "end").rstrip("\n")
+    mail_item.Subject = render_template(detail_row_current, subject_template)
+    sigs = load_signatures()
+    sig_entry = sigs.get(single_sig_var.get(), {"html": "", "text": ""})
+    rendered = render_with_signature(
+        render_template(detail_row_current, body_template),
+        sig_entry,
+        False,
+    )
+    if rendered.get("html"):
+        mail_item.HTMLBody = rendered["html"]
+    else:
+        mail_item.Body = rendered.get("text", "")
+
+    attach_enabled = single_attachments_enabled_var.get() if single_attachments_enabled_var else False
+    attach_root = single_attachments_root_var.get() if single_attachments_root_var else ""
+    if attach_enabled:
+        attach_files_for_hotel(mail_item, attach_root, str(detail_row_current.get("Spirit Code", "")).strip())
+    mail_item.Display()
+
+
+def init_single_compose_ui(parent):
+    """Build inline single-email compose UI on the lookup tab."""
+    global single_compose_frame, single_subj_var, single_body_text, single_sig_var, single_recips_frame
+    single_compose_frame = ttk.LabelFrame(parent, text="Create Outlook Draft (Single)", padding=8)
+    single_compose_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(8, 0))
+
+    ttk.Label(single_compose_frame, text="Subject (supports placeholders):").pack(anchor="w", padx=6, pady=(4, 2))
+    single_subj_var = tk.StringVar()
+    subj_entry = ttk.Entry(single_compose_frame, textvariable=single_subj_var)
+    subj_entry.pack(fill="x", padx=6)
+
+    ttk.Label(single_compose_frame, text="Body (supports placeholders):").pack(anchor="w", padx=6, pady=(8, 2))
+    single_body_text = tk.Text(single_compose_frame, height=8, font=("Aptos", 12))
+    single_body_text.pack(fill="both", expand=True, padx=6)
+
+    link_frame = ttk.Frame(single_compose_frame)
+    link_frame.pack(fill="x", padx=6, pady=(2, 4))
+    ttk.Button(link_frame, text="Insert Link...", command=lambda: open_link_dialog(single_body_text)).pack(side="left")
+
+    ph_frame = ttk.Frame(single_compose_frame)
+    ph_frame.pack(fill="x", padx=6, pady=4)
+    ttk.Label(ph_frame, text="Placeholders:").pack(side="left")
+    ph_var = tk.StringVar(value=PLACEHOLDERS[0])
+    ph_combo = ttk.Combobox(ph_frame, textvariable=ph_var, values=PLACEHOLDERS, state="readonly", width=20)
+    ph_combo.pack(side="left", padx=4)
+
+    def insert_placeholder(target="body"):
+        ph = ph_var.get()
+        if target == "body":
+            single_body_text.insert("insert", ph)
+        else:
+            subj_entry.insert("insert", ph)
+
+    ttk.Button(ph_frame, text="Insert in Body", command=lambda: insert_placeholder("body")).pack(side="left", padx=4)
+    ttk.Button(ph_frame, text="Insert in Subject", command=lambda: insert_placeholder("subj")).pack(side="left", padx=4)
+
+    sigs = load_signatures()
+    ttk.Label(single_compose_frame, text="Signature:").pack(anchor="w", padx=6, pady=(4, 2))
+    single_sig_var = tk.StringVar(value="None")
+    ttk.Combobox(single_compose_frame, textvariable=single_sig_var, values=list(sigs.keys()), state="readonly").pack(
+        fill="x", padx=6, pady=(0, 6)
+    )
+
+    single_recips_frame = ttk.LabelFrame(single_compose_frame, text="Recipients (per email)", padding=6)
+    single_recips_frame.pack(fill="x", padx=6, pady=(0, 6))
+
+    ttk.Button(single_compose_frame, text="Create Draft", command=send_single_inline).pack(anchor="e", padx=6, pady=6)
 
 def open_link_dialog(target_text: tk.Text):
     """Open a small dialog to insert a friendly link into the given text widget."""
@@ -1258,13 +1429,9 @@ def init_detail_panel(parent):
     detail_roles_frame = ttk.LabelFrame(detail_frame, text="Recipients", padding=8)
     detail_roles_frame.pack(fill="both", expand=True, pady=(0, 8))
 
-    actions = ttk.Frame(detail_frame)
-    actions.pack(fill="x")
-
-    detail_start_email_btn = ttk.Button(
-        actions, text="Start Email", command=lambda: draft_email_single(detail_checkbox_vars, detail_hotel_name)
+    ttk.Label(detail_roles_frame, text="Recipients are configured in the composer below.", foreground="gray").pack(
+        anchor="w"
     )
-    detail_start_email_btn.pack(side="right")
 
     detail_status_var = tk.StringVar(value="Select a hotel to view details.")
     ttk.Label(detail_frame, textvariable=detail_status_var, foreground="gray").pack(anchor="w", pady=(4, 0))
@@ -1279,9 +1446,11 @@ def clear_detail_panel(message: str = "Select a hotel to view details."):
         var.set("")
     for widget in detail_roles_frame.winfo_children():
         widget.destroy()
-    ttk.Label(detail_roles_frame, text="No recipients available.", foreground="gray").pack(anchor="w")
+    ttk.Label(detail_roles_frame, text="Recipients are configured in the composer below.", foreground="gray").pack(anchor="w")
     if detail_status_var is not None:
         detail_status_var.set(message)
+    clear_single_compose()
+    clear_single_compose()
 
 
 def populate_detail_panel(row: pd.Series):
@@ -1311,34 +1480,8 @@ def populate_detail_panel(row: pd.Series):
 
     for widget in detail_roles_frame.winfo_children():
         widget.destroy()
-
-    roles_to_checkbox = {}
-    if get_avp_col():
-        roles_to_checkbox["AVP"] = get_avp_col()
-    if get_md_col():
-        roles_to_checkbox["MD"] = get_md_col()
-    if get_gm_col():
-        roles_to_checkbox["GM"] = get_gm_col()
-    if get_eng_col():
-        roles_to_checkbox["Engineering"] = get_eng_col()
-    if get_dof_col():
-        roles_to_checkbox["DOF"] = get_dof_col()
-    if get_reg_eng_spec_col():
-        roles_to_checkbox["Regional Eng Specialist"] = get_reg_eng_spec_col()
-
-    if not roles_to_checkbox:
-        ttk.Label(detail_roles_frame, text="No role columns configured.", foreground="gray").pack(anchor="w")
-    else:
-        for role, email_col in roles_to_checkbox.items():
-            email_address = row.get(email_col)
-            if email_col in row.index and pd.notna(email_address):
-                var = tk.BooleanVar()
-                chk = ttk.Checkbutton(detail_roles_frame, text=f"{role}: {email_address}", variable=var)
-                chk.pack(anchor="w", pady=1)
-                canonical_role = "RegionalEngineeringSpecialist" if role.startswith("Regional") else role
-                detail_checkbox_vars.append((var, str(email_address), canonical_role))
-            else:
-                ttk.Label(detail_roles_frame, text=f"{role}: N/A (Email not found)", foreground="gray").pack(anchor="w")
+    ttk.Label(detail_roles_frame, text="Recipients are configured in the composer below.", foreground="gray").pack(anchor="w")
+    update_single_compose(row)
 
 # ---------------------------------------------------------------------------
 # Multi-select helpers
@@ -2159,6 +2302,7 @@ lookup_frame = ttk.Frame(notebook, padding=10)
 notebook.add(lookup_frame, text="Lookup")
 lookup_frame.columnconfigure(1, weight=1)
 lookup_frame.rowconfigure(0, weight=1)
+lookup_frame.rowconfigure(1, weight=1)
 
 lookup_form = ttk.Frame(lookup_frame)
 lookup_form.grid(row=0, column=0, sticky="nw", padx=(0, 10))
@@ -2207,6 +2351,7 @@ detail_container = ttk.Frame(lookup_frame)
 detail_container.grid(row=0, column=1, sticky="nsew")
 init_detail_panel(detail_container)
 clear_detail_panel()
+init_single_compose_ui(lookup_frame)
 
 # ---------------------------------------------------------------------------
 # Tab 2: Multi-email
