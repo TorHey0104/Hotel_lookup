@@ -518,7 +518,7 @@ def render_with_signature(body_text: str, signature_entry: dict, body_is_html: b
     sig_txt = signature_entry.get("text", "") if isinstance(signature_entry, dict) else ""
 
     base_style = "font-family:'Aptos',sans-serif; font-size:12pt; line-height:1.4;"
-    link_pattern = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
+    link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
     def linkify_text(txt: str) -> str:
         """Convert [label](url) to anchors; escape other text and preserve newlines."""
@@ -529,7 +529,10 @@ def render_with_signature(body_text: str, signature_entry: dict, body_is_html: b
             if pre:
                 parts.append(html.escape(pre).replace("\n", "<br>"))
             label = html.escape(m.group(1))
-            url = html.escape(m.group(2))
+            raw_url = m.group(2).strip()
+            if not raw_url.lower().startswith(("http://", "https://")):
+                raw_url = "https://" + raw_url
+            url = html.escape(raw_url)
             parts.append(f'<a href="{url}">{label}</a>')
             last = m.end()
         tail = txt[last:]
@@ -548,6 +551,7 @@ def render_with_signature(body_text: str, signature_entry: dict, body_is_html: b
         return f"<div style='white-space:pre-wrap; {base_style}'>{content}</div>"
 
     # User text to HTML block
+    body_has_links = bool(link_pattern.search(body_text)) if not body_is_html else False
     user_block = wrap_block(body_text if body_is_html else to_html(body_text, allow_links=True))
 
     # Signature block
@@ -566,7 +570,7 @@ def render_with_signature(body_text: str, signature_entry: dict, body_is_html: b
             forward_block = wrap_block(to_html(forward_html, allow_links=True))
 
     # Build HTML if any rich content exists
-    if forward_block or sig_block or body_is_html or forward_is_html or sig_html:
+    if forward_block or sig_block or body_is_html or forward_is_html or sig_html or body_has_links:
         html_parts = [user_block]
         if sig_block:
             html_parts.append(sig_block)
