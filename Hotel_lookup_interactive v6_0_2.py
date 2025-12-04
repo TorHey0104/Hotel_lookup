@@ -2647,23 +2647,26 @@ bind_autofit(filtered_tree)
 selected_frame = ttk.LabelFrame(lists_pane, text="Ausgewaehlte Hotels", padding=5)
 lists_pane.add(selected_frame, weight=1)
 
-selected_columns = ("Spirit", "Hotel", "Recipients", "AVP", "MD", "GM", "Engineering", "DOF", "RegEng")
+selected_columns = ("Spirit", "Hotel", "Recipients", "AVP", "MD", "GM", "ENG", "DOF", "RES")
 selected_tree = ttk.Treeview(selected_frame, columns=selected_columns, show="headings", selectmode="extended")
 selected_xscroll = ttk.Scrollbar(selected_frame, orient="horizontal", command=selected_tree.xview)
 selected_tree.configure(xscrollcommand=selected_xscroll.set)
 for col, width in [
-    ("Spirit", 80),
+    ("Spirit", 60),
     ("Hotel", 200),
-    ("Recipients", 300),
-    ("AVP", 60),
-    ("MD", 60),
-    ("GM", 60),
-    ("Engineering", 90),
-    ("DOF", 60),
-    ("RegEng", 80),
+    ("Recipients", 360),
+    ("AVP", 50),
+    ("MD", 50),
+    ("GM", 50),
+    ("ENG", 50),
+    ("DOF", 50),
+    ("RES", 50),
 ]:
     selected_tree.heading(col, text=col)
-    selected_tree.column(col, width=width, stretch=True)
+    if col in ("AVP", "MD", "GM", "ENG", "DOF", "RES", "Spirit"):
+        selected_tree.column(col, width=width, anchor="center", stretch=False)
+    else:
+        selected_tree.column(col, width=width, stretch=True)
 selected_tree.pack(fill="both", expand=True)
 selected_xscroll.pack(fill="x")
 bind_autofit(selected_tree)
