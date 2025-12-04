@@ -1663,8 +1663,8 @@ def update_selected_tree():
                 availability[role] = "No"
         recipients_all = [r for r in recipients_all if r]
 
-        def avail(role_key):
-            return availability.get(role_key, "No")
+        def mark(role_key: str) -> str:
+            return "✓" if availability.get(role_key, "No") == "Yes" else "✗"
 
         selected_tree.insert(
             "",
@@ -1674,13 +1674,14 @@ def update_selected_tree():
                 row.get("Spirit Code", ""),
                 row.get("Hotel", ""),
                 "; ".join(recipients_all),
-                avail("AVP"),
-                avail("MD"),
-                avail("GM"),
-                avail("Engineering"),
-                avail("DOF"),
-                avail("RegionalEngineeringSpecialist"),
+                mark("AVP"),
+                mark("MD"),
+                mark("GM"),
+                mark("Engineering"),
+                mark("DOF"),
+                mark("RegionalEngineeringSpecialist"),
             ),
+            tags=(),
         )
 
 
@@ -2652,15 +2653,15 @@ selected_tree = ttk.Treeview(selected_frame, columns=selected_columns, show="hea
 selected_xscroll = ttk.Scrollbar(selected_frame, orient="horizontal", command=selected_tree.xview)
 selected_tree.configure(xscrollcommand=selected_xscroll.set)
 for col, width in [
-    ("Spirit", 60),
-    ("Hotel", 200),
-    ("Recipients", 360),
-    ("AVP", 50),
-    ("MD", 50),
-    ("GM", 50),
-    ("ENG", 50),
-    ("DOF", 50),
-    ("RES", 50),
+    ("Spirit", 40),
+    ("Hotel", 220),
+    ("Recipients", 450),
+    ("AVP", 25),
+    ("MD", 25),
+    ("GM", 25),
+    ("ENG", 25),
+    ("DOF", 25),
+    ("RES", 25),
 ]:
     selected_tree.heading(col, text=col)
     if col in ("AVP", "MD", "GM", "ENG", "DOF", "RES", "Spirit"):
