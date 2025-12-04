@@ -46,7 +46,7 @@ LOGO_PATH = os.path.join(BASE_DIR, "hyatt_logo.png")  # optional logo next to sc
 RECENT_CONFIG_PATH = os.path.join(BASE_DIR, "recent_configs.json")
 
 TOOL_NAME = "Hyatt EAME Hotel Lookup and Multi E-Mail Tool"
-VERSION = "6.0.2"
+VERSION = "6.0.3"
 VERSION_DATE = date.today().strftime("%d.%m.%Y")
 
 # Default column names (can be overridden in Setup tab)
@@ -1561,6 +1561,7 @@ def refresh_filtered_hotels():
         filtered_tree.delete(item)
 
     filt_df = filtered_dataframe()
+    hyatt_col_name = get_hyatt_date_col()
     current_filtered_indexes = []
 
     # Reconfigure columns based on selection
@@ -1583,6 +1584,12 @@ def refresh_filtered_hotels():
                 values.append(get_country_value(row))
             elif col == "City":
                 values.append(get_city_value(row))
+            elif hyatt_col_name and col == hyatt_col_name:
+                dt_val = pd.to_datetime(row.get(col, ""), errors="coerce")
+                if pd.notna(dt_val):
+                    values.append(dt_val.strftime("%Y-%m"))
+                else:
+                    values.append(str(row.get(col, "")))
             else:
                 values.append(row.get(col, ""))
         filtered_tree.insert("", "end", iid=tree_id, values=tuple(values))
@@ -1719,6 +1726,30 @@ def bind_autofit(tree: ttk.Treeview, min_width: int = 60):
             tree.column(col, width=per, stretch=True)
 
     tree.bind("<Configure>", _on_config)
+
+
+def enable_treeview_sort(tree: ttk.Treeview):
+    """Enable clickable column headers for sorting."""
+    if tree is None:
+        return
+
+    def sort_by(col: str, descending: bool = False):
+        data = []
+        for iid in tree.get_children(""):
+            val = tree.set(iid, col)
+            sort_val = str(val)
+            try:
+                sort_val = float(sort_val)
+            except ValueError:
+                sort_val = sort_val.lower()
+            data.append((sort_val, iid))
+        data.sort(reverse=descending)
+        for idx, (_, iid) in enumerate(data):
+            tree.move(iid, "", idx)
+        tree.heading(col, command=lambda c=col: sort_by(c, not descending))
+
+    for col in tree["columns"]:
+        tree.heading(col, command=lambda c=col: sort_by(c, False))
 
 
 def draft_emails_for_selection():
@@ -2643,7 +2674,7 @@ for col, width in [
     filtered_tree.column(col, width=width, stretch=True)
 filtered_tree.pack(fill="both", expand=True)
 filtered_xscroll.pack(fill="x")
-bind_autofit(filtered_tree)
+enable_treeview_sort(filtered_tree)
 
 selected_frame = ttk.LabelFrame(lists_pane, text="Ausgewaehlte Hotels", padding=5)
 lists_pane.add(selected_frame, weight=1)
@@ -2653,15 +2684,15 @@ selected_tree = ttk.Treeview(selected_frame, columns=selected_columns, show="hea
 selected_xscroll = ttk.Scrollbar(selected_frame, orient="horizontal", command=selected_tree.xview)
 selected_tree.configure(xscrollcommand=selected_xscroll.set)
 for col, width in [
-    ("Spirit", 40),
-    ("Hotel", 220),
-    ("Recipients", 450),
-    ("AVP", 25),
-    ("MD", 25),
-    ("GM", 25),
-    ("ENG", 25),
-    ("DOF", 25),
-    ("RES", 25),
+    ("Spirit", 30),
+    ("Hotel", 260),
+    ("Recipients", 520),
+    ("AVP", 15),
+    ("MD", 15),
+    ("GM", 15),
+    ("ENG", 15),
+    ("DOF", 15),
+    ("RES", 15),
 ]:
     selected_tree.heading(col, text=col)
     if col in ("AVP", "MD", "GM", "ENG", "DOF", "RES", "Spirit"):
@@ -2670,7 +2701,7 @@ for col, width in [
         selected_tree.column(col, width=width, stretch=True)
 selected_tree.pack(fill="both", expand=True)
 selected_xscroll.pack(fill="x")
-bind_autofit(selected_tree)
+enable_treeview_sort(selected_tree)
 
 draft_btn = ttk.Button(multi_frame, text="Draft Emails in Outlook", command=draft_emails_for_selection)
 draft_btn.pack(anchor="e", padx=8, pady=6)
@@ -2779,4 +2810,3 @@ root.after(120000, close_splash)
 root.after(200, warm_outlook_app)
 
 root.mainloop()
-
