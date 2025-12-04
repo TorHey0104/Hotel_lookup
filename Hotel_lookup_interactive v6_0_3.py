@@ -1570,6 +1570,7 @@ def refresh_filtered_hotels():
     for col in cols:
         filtered_tree.heading(col, text=col)
         filtered_tree.column(col, width=120, stretch=True)
+    enable_treeview_sort(filtered_tree)
 
     for idx, (_, row) in enumerate(filt_df.iterrows()):
         tree_id = str(row.name)
@@ -1732,24 +1733,29 @@ def enable_treeview_sort(tree: ttk.Treeview):
     """Enable clickable column headers for sorting."""
     if tree is None:
         return
+    sort_state = {}
 
-    def sort_by(col: str, descending: bool = False):
+    def sort_by(col: str):
+        descending = sort_state.get(col, False)
         data = []
         for iid in tree.get_children(""):
             val = tree.set(iid, col)
-            sort_val = str(val)
-            try:
-                sort_val = float(sort_val)
-            except ValueError:
-                sort_val = sort_val.lower()
-            data.append((sort_val, iid))
-        data.sort(reverse=descending)
+            def norm(v):
+                if v is None:
+                    return (2, "")
+                s = str(v)
+                try:
+                    return (0, float(s))
+                except ValueError:
+                    return (1, s.lower())
+            data.append((norm(val), iid))
+        data.sort(key=lambda t: t[0], reverse=descending)
         for idx, (_, iid) in enumerate(data):
             tree.move(iid, "", idx)
-        tree.heading(col, command=lambda c=col: sort_by(c, not descending))
+        sort_state[col] = not descending
 
     for col in tree["columns"]:
-        tree.heading(col, command=lambda c=col: sort_by(c, False))
+        tree.heading(col, command=lambda c=col: sort_by(c))
 
 
 def draft_emails_for_selection():
@@ -2661,7 +2667,7 @@ filtered_tree = ttk.Treeview(
 filtered_xscroll = ttk.Scrollbar(filtered_frame, orient="horizontal", command=filtered_tree.xview)
 filtered_tree.configure(xscrollcommand=filtered_xscroll.set)
 for col, width in [
-    ("Spirit", 80),
+    ("Spirit", 70),
     ("Hotel", 220),
     ("City", 120),
     ("Brand", 120),
@@ -2684,15 +2690,15 @@ selected_tree = ttk.Treeview(selected_frame, columns=selected_columns, show="hea
 selected_xscroll = ttk.Scrollbar(selected_frame, orient="horizontal", command=selected_tree.xview)
 selected_tree.configure(xscrollcommand=selected_xscroll.set)
 for col, width in [
-    ("Spirit", 30),
+    ("Spirit", 60),      # 5 chars
     ("Hotel", 260),
-    ("Recipients", 520),
-    ("AVP", 15),
-    ("MD", 15),
-    ("GM", 15),
-    ("ENG", 15),
-    ("DOF", 15),
-    ("RES", 15),
+    ("Recipients", 500),
+    ("AVP", 30),
+    ("MD", 30),
+    ("GM", 30),
+    ("ENG", 30),
+    ("DOF", 30),
+    ("RES", 30),
 ]:
     selected_tree.heading(col, text=col)
     if col in ("AVP", "MD", "GM", "ENG", "DOF", "RES", "Spirit"):
