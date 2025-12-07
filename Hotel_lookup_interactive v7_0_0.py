@@ -36,6 +36,7 @@ from openpyxl.utils import get_column_letter, range_boundaries
 from filters import apply_filters
 from mail_utils import render_with_signature, get_outlook_app, save_forward
 from ui_common import make_multiselect
+from tabs_lookup_setup import create_lookup_tab, create_setup_tab
 
 # Cache Outlook availability and instance so email drafting is faster after the first use
 WIN32COM_AVAILABLE = os.name == "nt" and importlib.util.find_spec("win32com.client") is not None
@@ -2989,6 +2990,8 @@ attachments_enabled_var = tk.BooleanVar(value=False)
 attachments_root_var = tk.StringVar(value="")
 excel_file_label_var = tk.StringVar(value="Keine Datei geladen")
 excel_mode_var = tk.StringVar(value="dedicated")
+hyatt_year_var = tk.StringVar(value="")
+hyatt_year_mode_var = tk.StringVar(value="Any")
 
 # Initialize column selection vars
 brand_col_var = tk.StringVar(value=DEFAULT_BRAND_COL)
@@ -3053,377 +3056,289 @@ root.config(menu=menubar)
 notebook = ttk.Notebook(root)
 notebook.pack(fill="both", expand=True)
 
-# ---------------------------------------------------------------------------
-# Tab 1: Lookup
-# ---------------------------------------------------------------------------
-lookup_frame = ttk.Frame(notebook, padding=10)
-notebook.add(lookup_frame, text="Lookup")
-lookup_frame.columnconfigure(1, weight=1)
-lookup_frame.rowconfigure(0, weight=1)
-lookup_frame.rowconfigure(1, weight=1)
+def create_multi_tab(notebook):
+    """Build and attach the multi-email tab."""
+    global forward_status_var, quick_spirit_var, filtered_count_var
+    global filtered_tree, selected_tree
+    global brand_listbox, brand_band_listbox, region_listbox, relationship_listbox, country_listbox
+    global hyatt_year_var, hyatt_year_mode_var
 
-lookup_form = ttk.Frame(lookup_frame)
-lookup_form.grid(row=0, column=0, sticky="nw", padx=(0, 10))
+    frame = ttk.Frame(notebook, padding=10)
+    notebook.add(frame, text="Multi-Email")
 
-spirit_label = tk.Label(lookup_form, text="Spirit Code:")
-spirit_label.grid(row=0, column=0, sticky="e", padx=5, pady=5)
-spirit_entry = tk.Entry(lookup_form, width=30)
-spirit_entry.grid(row=0, column=1, padx=5, pady=5)
+    root.minsize(1150, 820)
+    forward_bar = ttk.Frame(frame)
+    forward_bar.pack(fill="x", padx=5, pady=(0, 6))
+    forward_status_var = tk.StringVar(value="No source email captured.")
+    ttk.Button(forward_bar, text="Browse Outlook...", command=browse_outlook_email).pack(side="left", padx=4)
+    ttk.Button(forward_bar, text="Clear Forward", command=clear_forward_template).pack(side="left", padx=4)
+    ttk.Label(forward_bar, textvariable=forward_status_var, foreground="gray").pack(side="left", padx=8)
 
-hotel_label = tk.Label(lookup_form, text="Hotel:")
-hotel_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
-hotel_var = tk.StringVar()
-hotel_combo = ttk.Combobox(lookup_form, textvariable=hotel_var, values=hotel_names)
-hotel_combo.grid(row=1, column=1, padx=5, pady=5)
-hotel_combo.state(["!readonly"])
+    quick_frame = ttk.Frame(frame)
+    quick_frame.pack(fill="x", padx=5, pady=(0, 6))
+    ttk.Label(quick_frame, text="Quick Spirit Codes (comma separated)").pack(side="left", padx=4)
+    quick_spirit_var = tk.StringVar()
+    quick_entry = ttk.Entry(quick_frame, textvariable=quick_spirit_var)
+    quick_entry.pack(side="left", padx=4, fill="x", expand=True)
+    ttk.Button(quick_frame, text="Apply Quick Filter", command=refresh_filtered_hotels).pack(side="left", padx=4)
+    filtered_count_var = tk.StringVar(value="Filtered: 0")
+    ttk.Label(quick_frame, textvariable=filtered_count_var, foreground="gray").pack(side="right", padx=4)
 
+    attachments_frame = ttk.LabelFrame(frame, text="Attachments (multi-email)", padding=6)
+    attachments_frame.pack(fill="x", padx=5, pady=(0, 6))
+    ttk.Checkbutton(attachments_frame, text="Enable attachments", variable=attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
+    ttk.Label(attachments_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
+    attach_entry = ttk.Entry(attachments_frame, textvariable=attachments_root_var)
+    attach_entry.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
+    ttk.Button(attachments_frame, text="Browse", command=browse_attachments_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
+    attachments_frame.columnconfigure(1, weight=1)
 
-def on_hotel_keyrelease(event):
-    val = hotel_var.get()
-    hotel_combo["values"] = hotel_names if not val else [h for h in hotel_names if val.lower() in h.lower()]
+    filters_frame = ttk.LabelFrame(frame, text="Filter Hotels", padding=10)
+    filters_frame.pack(fill="x", padx=5, pady=5)
 
+    hyatt_year_var.set("")
+    hyatt_year_mode_var.set("Any")
 
-hotel_combo.bind("<KeyRelease>", on_hotel_keyrelease)
+    row_f = 0
+    brand_wrap, brand_listbox = make_multiselect(filters_frame, "Brand (multi-select)")
+    brand_wrap.grid(row=row_f, column=0, sticky="nsew", padx=4, pady=2)
 
-search_button = tk.Button(lookup_form, text="Search", command=lambda: lookup(spirit_entry, hotel_var))
-search_button.grid(row=2, column=0, columnspan=2, pady=10)
+    band_wrap, brand_band_listbox = make_multiselect(filters_frame, "Brand Band")
+    band_wrap.grid(row=row_f, column=1, sticky="nsew", padx=4, pady=2)
 
-single_attach_frame = ttk.LabelFrame(lookup_form, text="Attachments (single email)", padding=8)
-single_attach_frame.grid(row=3, column=0, columnspan=2, sticky="we", padx=2, pady=6)
-single_attachments_enabled_var = tk.BooleanVar(value=False)
-single_attachments_root_var = tk.StringVar(value="")
-ttk.Checkbutton(single_attach_frame, text="Enable attachments for single email", variable=single_attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
-ttk.Label(single_attach_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-single_attach_entry = ttk.Entry(single_attach_frame, textvariable=single_attachments_root_var, width=40)
-single_attach_entry.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
+    region_wrap, region_listbox = make_multiselect(filters_frame, "Region")
+    region_wrap.grid(row=row_f, column=2, sticky="nsew", padx=4, pady=2)
 
-def browse_single_attach_root():
-    sel = filedialog.askdirectory(title="Choose attachments root (single email)")
-    if sel:
-        single_attachments_root_var.set(sel)
+    relationship_wrap, relationship_listbox = make_multiselect(filters_frame, "Relationship")
+    relationship_wrap.grid(row=row_f, column=3, sticky="nsew", padx=4, pady=2)
 
-ttk.Button(single_attach_frame, text="Browse", command=browse_single_attach_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
-single_attach_frame.columnconfigure(1, weight=1)
+    country_wrap, country_listbox = make_multiselect(filters_frame, "Country/Area")
+    country_wrap.grid(row=row_f, column=4, sticky="nsew", padx=4, pady=2)
 
-detail_container = ttk.Frame(lookup_frame)
-detail_container.grid(row=0, column=1, sticky="nsew")
-init_detail_panel(detail_container)
-clear_detail_panel()
-init_single_compose_ui(lookup_frame)
+    hyatt_wrap = ttk.Frame(filters_frame)
+    hyatt_wrap.grid(row=row_f, column=5, sticky="nw", padx=4, pady=2)
+    ttk.Label(hyatt_wrap, text="Hyatt Date (year)").pack(anchor="w")
+    hyatt_year_entry = ttk.Entry(hyatt_wrap, textvariable=hyatt_year_var, width=10)
+    hyatt_year_entry.pack(anchor="w", pady=(0, 2))
+    hyatt_mode_combo = ttk.Combobox(
+        hyatt_wrap,
+        textvariable=hyatt_year_mode_var,
+        values=["Any", "Before", "Before/Equal", "Equal", "After/Equal", "After"],
+        state="readonly",
+        width=12,
+    )
+    hyatt_mode_combo.pack(anchor="w")
 
-# ---------------------------------------------------------------------------
-# Tab 2: Multi-email
-# ---------------------------------------------------------------------------
-multi_frame = ttk.Frame(notebook, padding=10)
-notebook.add(multi_frame, text="Multi-Email")
+    for col in range(5):
+        filters_frame.columnconfigure(col, weight=1)
 
-root.minsize(1150, 820)
-forward_bar = ttk.Frame(multi_frame)
-forward_bar.pack(fill="x", padx=5, pady=(0, 6))
-forward_status_var = tk.StringVar(value="No source email captured.")
-ttk.Button(forward_bar, text="Browse Outlook...", command=browse_outlook_email).pack(side="left", padx=4)
-ttk.Button(forward_bar, text="Clear Forward", command=clear_forward_template).pack(side="left", padx=4)
-ttk.Label(forward_bar, textvariable=forward_status_var, foreground="gray").pack(side="left", padx=8)
+    ttk.Button(filters_frame, text="Apply Filter", command=refresh_filtered_hotels).grid(row=0, column=6, sticky="e", padx=8, pady=2)
+    ttk.Button(filters_frame, text="Reset Filters", command=reset_filters).grid(row=0, column=7, sticky="e", padx=8, pady=2)
 
-quick_frame = ttk.Frame(multi_frame)
-quick_frame.pack(fill="x", padx=5, pady=(0, 6))
-ttk.Label(quick_frame, text="Quick Spirit Codes (comma separated)").pack(side="left", padx=4)
-quick_spirit_var = tk.StringVar()
-quick_entry = ttk.Entry(quick_frame, textvariable=quick_spirit_var)
-quick_entry.pack(side="left", padx=4, fill="x", expand=True)
-ttk.Button(quick_frame, text="Apply Quick Filter", command=refresh_filtered_hotels).pack(side="left", padx=4)
-filtered_count_var = tk.StringVar(value="Filtered: 0")
-ttk.Label(quick_frame, textvariable=filtered_count_var, foreground="gray").pack(side="right", padx=4)
+    lists_pane = ttk.Panedwindow(frame, orient="horizontal")
+    lists_pane.pack(fill="both", expand=True, padx=5, pady=5)
 
-# Multi-email attachments controls (moved here for visibility)
-attachments_frame = ttk.LabelFrame(multi_frame, text="Attachments (multi-email)", padding=6)
-attachments_frame.pack(fill="x", padx=5, pady=(0, 6))
-ttk.Checkbutton(attachments_frame, text="Enable attachments", variable=attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
-ttk.Label(attachments_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-attach_entry = ttk.Entry(attachments_frame, textvariable=attachments_root_var)
-attach_entry.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
-ttk.Button(attachments_frame, text="Browse", command=browse_attachments_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
-attachments_frame.columnconfigure(1, weight=1)
+    buttons_bar = ttk.Frame(frame)
+    buttons_bar.pack(fill="x", padx=5, pady=(0, 5))
+    ttk.Button(buttons_bar, text="Select", command=add_selected_hotels).pack(side="left", padx=4)
+    ttk.Button(buttons_bar, text="Select All", command=add_all_filtered_hotels).pack(side="left", padx=4)
+    ttk.Button(buttons_bar, text="Remove", command=remove_selected_hotels).pack(side="left", padx=4)
+    ttk.Button(buttons_bar, text="Remove All", command=clear_selected_hotels).pack(side="left", padx=4)
 
-filters_frame = ttk.LabelFrame(multi_frame, text="Filter Hotels", padding=10)
-filters_frame.pack(fill="x", padx=5, pady=5)
+    filtered_frame = ttk.LabelFrame(lists_pane, text="Gefilterte Hotels", padding=5)
+    lists_pane.add(filtered_frame, weight=1)
 
-hyatt_year_var = tk.StringVar(value="")
-hyatt_year_mode_var = tk.StringVar(value="Any")
+    filtered_tree = ttk.Treeview(
+        filtered_frame,
+        columns=("Spirit", "Hotel", "City", "Brand", "Brand Band", "Relationship", "Region", "Country"),
+        show="headings",
+        selectmode="extended",
+    )
+    filtered_xscroll = ttk.Scrollbar(filtered_frame, orient="horizontal", command=filtered_tree.xview)
+    filtered_tree.configure(xscrollcommand=filtered_xscroll.set)
+    for col, width in [
+        ("Spirit", 70),
+        ("Hotel", 220),
+        ("City", 120),
+        ("Brand", 120),
+        ("Brand Band", 120),
+        ("Relationship", 120),
+        ("Region", 120),
+        ("Country", 140),
+    ]:
+        filtered_tree.heading(col, text=col)
+        filtered_tree.column(col, width=width, stretch=True)
+    filtered_tree.pack(fill="both", expand=True)
+    filtered_xscroll.pack(fill="x")
+    enable_treeview_sort(filtered_tree)
 
-row_f = 0
-brand_wrap, brand_listbox = make_multiselect(filters_frame, "Brand (multi-select)")
-brand_wrap.grid(row=row_f, column=0, sticky="nsew", padx=4, pady=2)
+    selected_frame = ttk.LabelFrame(lists_pane, text="Ausgewaehlte Hotels", padding=5)
+    lists_pane.add(selected_frame, weight=1)
 
-band_wrap, brand_band_listbox = make_multiselect(filters_frame, "Brand Band")
-band_wrap.grid(row=row_f, column=1, sticky="nsew", padx=4, pady=2)
+    selected_widths = {
+        "Spirit": 60,
+        "Hotel": 260,
+        "Recipients": 500,
+        "AVP": 30,
+        "MD": 30,
+        "GM": 30,
+        "ENG": 30,
+        "DOF": 30,
+        "RES": 30,
+    }
+    selected_tree, selected_xscroll = build_recipient_tree(selected_frame, widths=selected_widths, add_scroll=True)
+    selected_tree.pack(fill="both", expand=True)
+    if selected_xscroll:
+        selected_xscroll.pack(fill="x")
+    enable_treeview_sort(selected_tree)
 
-region_wrap, region_listbox = make_multiselect(filters_frame, "Region")
-region_wrap.grid(row=row_f, column=2, sticky="nsew", padx=4, pady=2)
+    ttk.Button(frame, text="Draft Emails in Outlook", command=draft_emails_for_selection).pack(anchor="e", padx=8, pady=6)
+    ttk.Button(frame, text="Draft ONE collective email", command=draft_collective_email).pack(anchor="e", padx=8, pady=(0, 6))
+    return frame
 
-relationship_wrap, relationship_listbox = make_multiselect(filters_frame, "Relationship")
-relationship_wrap.grid(row=row_f, column=3, sticky="nsew", padx=4, pady=2)
+def create_excel_tab(notebook):
+    """Build and attach the Excel-email tab."""
+    global excel_headers_frame, excel_filter_summary_var, excel_filtered_count_var
+    global excel_filtered_tree, excel_selected_tree
 
-country_wrap, country_listbox = make_multiselect(filters_frame, "Country/Area")
-country_wrap.grid(row=row_f, column=4, sticky="nsew", padx=4, pady=2)
+    frame = ttk.Frame(notebook, padding=10)
+    notebook.add(frame, text="Excel Emails")
 
-hyatt_wrap = ttk.Frame(filters_frame)
-hyatt_wrap.grid(row=row_f, column=5, sticky="nw", padx=4, pady=2)
-ttk.Label(hyatt_wrap, text="Hyatt Date (year)").pack(anchor="w")
-hyatt_year_entry = ttk.Entry(hyatt_wrap, textvariable=hyatt_year_var, width=10)
-hyatt_year_entry.pack(anchor="w", pady=(0, 2))
-hyatt_mode_combo = ttk.Combobox(
-    hyatt_wrap,
-    textvariable=hyatt_year_mode_var,
-    values=["Any", "Before", "Before/Equal", "Equal", "After/Equal", "After"],
-    state="readonly",
-    width=12,
+    excel_top = ttk.Frame(frame)
+    excel_top.pack(fill="x", pady=(0, 10))
+    ttk.Label(excel_top, text="Excel-Datei fuer Emails laden:").pack(side="left", padx=4)
+    ttk.Button(excel_top, text="Datei laden", command=load_excel_email_file).pack(side="left", padx=4)
+    ttk.Label(excel_top, textvariable=excel_file_label_var, foreground="gray").pack(side="left", padx=8)
+
+    excel_forward_bar = ttk.Frame(frame)
+    excel_forward_bar.pack(fill="x", padx=5, pady=(0, 6))
+    ttk.Label(excel_forward_bar, text="Forward-Email (optional):").pack(side="left", padx=4)
+    ttk.Button(excel_forward_bar, text="Browse Outlook...", command=browse_outlook_email).pack(side="left", padx=4)
+    ttk.Button(excel_forward_bar, text="Clear Forward", command=clear_forward_template).pack(side="left", padx=4)
+    ttk.Label(excel_forward_bar, textvariable=forward_status_var, foreground="gray").pack(side="left", padx=8)
+
+    excel_attachments_frame = ttk.LabelFrame(frame, text="Attachments (Excel emails)", padding=6)
+    excel_attachments_frame.pack(fill="x", padx=5, pady=(0, 6))
+    ttk.Checkbutton(excel_attachments_frame, text="Enable attachments", variable=attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
+    ttk.Label(excel_attachments_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
+    attach_entry_excel = ttk.Entry(excel_attachments_frame, textvariable=attachments_root_var)
+    attach_entry_excel.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
+    ttk.Button(excel_attachments_frame, text="Browse", command=browse_attachments_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
+    excel_attachments_frame.columnconfigure(1, weight=1)
+
+    mapping_box = ttk.LabelFrame(frame, text="Spaltenzuordnung", padding=8)
+    mapping_box.pack(fill="both", expand=True, pady=(0, 10))
+    ttk.Label(mapping_box, text="Waehlen Sie je Spalte: Spirit Code / Include in Body / Skip").pack(anchor="w", pady=(0, 6))
+    mapping_container = ttk.Frame(mapping_box)
+    mapping_container.pack(fill="both", expand=True)
+    headers_canvas = tk.Canvas(mapping_container, borderwidth=0, highlightthickness=0)
+    headers_scroll = ttk.Scrollbar(mapping_container, orient="vertical", command=headers_canvas.yview)
+    excel_headers_frame = ttk.Frame(headers_canvas)
+    headers_window = headers_canvas.create_window((0, 0), window=excel_headers_frame, anchor="nw")
+    def _on_headers_config(event):
+        headers_canvas.configure(scrollregion=headers_canvas.bbox("all"))
+    excel_headers_frame.bind("<Configure>", _on_headers_config)
+    headers_canvas.configure(yscrollcommand=headers_scroll.set)
+    headers_canvas.pack(side="left", fill="both", expand=True)
+    headers_scroll.pack(side="right", fill="y")
+
+    filter_bar = ttk.Frame(frame)
+    filter_bar.pack(fill="x", pady=4)
+    excel_filter_summary_var = tk.StringVar(value="")
+    ttk.Button(filter_bar, text="Filter anwenden", command=refresh_excel_filtered_tree).pack(side="left", padx=4)
+    ttk.Button(filter_bar, text="Filter loeschen", command=lambda: [lb.selection_clear(0, tk.END) for _, _, lb in excel_filter_controls] or refresh_excel_filtered_tree()).pack(side="left", padx=4)
+    ttk.Label(filter_bar, textvariable=excel_filter_summary_var, foreground="gray").pack(side="left", padx=6)
+    excel_filtered_count_var = tk.StringVar(value="Gefiltert: 0")
+    ttk.Label(filter_bar, textvariable=excel_filtered_count_var, foreground="gray").pack(side="left", padx=6)
+
+    actions = ttk.Frame(frame)
+    actions.pack(fill="x", pady=4)
+    ttk.Label(actions, text="Versand-Modus:").pack(side="left", padx=10)
+    ttk.Radiobutton(actions, text="Einzel pro Hotel", variable=excel_mode_var, value="dedicated").pack(side="left")
+    ttk.Radiobutton(actions, text="Eine Sammelmail", variable=excel_mode_var, value="collective").pack(side="left", padx=6)
+    ttk.Button(actions, text="Emails erstellen", command=prompt_excel_compose).pack(side="right", padx=4)
+
+    excel_lists = ttk.Panedwindow(frame, orient="horizontal")
+    excel_lists.pack(fill="both", expand=True, pady=6)
+
+    excel_filtered_frame = ttk.LabelFrame(excel_lists, text="Gefilterte Excel-Hotels", padding=5)
+    excel_lists.add(excel_filtered_frame, weight=1)
+    excel_widths = {
+        "Spirit": 70,
+        "Hotel": 220,
+        "Recipients": 420,
+        "AVP": 40,
+        "MD": 40,
+        "GM": 40,
+        "ENG": 40,
+        "DOF": 40,
+        "RES": 40,
+    }
+    excel_filtered_tree, _ = build_recipient_tree(excel_filtered_frame, widths=excel_widths, add_scroll=False)
+    excel_filtered_tree.pack(fill="both", expand=True)
+    enable_treeview_sort(excel_filtered_tree)
+
+    excel_selected_frame = ttk.LabelFrame(excel_lists, text="Ausgewaehlte Excel-Hotels", padding=5)
+    excel_lists.add(excel_selected_frame, weight=1)
+    excel_selected_tree, _ = build_recipient_tree(excel_selected_frame, widths=excel_widths, add_scroll=False)
+    excel_selected_tree.pack(fill="both", expand=True)
+    enable_treeview_sort(excel_selected_tree)
+
+    excel_btns = ttk.Frame(frame)
+    excel_btns.pack(fill="x", pady=4)
+    ttk.Button(excel_btns, text="Auswahl hinzufuegen", command=excel_add_selected).pack(side="left", padx=4)
+    ttk.Button(excel_btns, text="Alle hinzufuegen", command=excel_add_all).pack(side="left", padx=4)
+    ttk.Button(excel_btns, text="Entfernen", command=excel_remove_selected).pack(side="left", padx=4)
+    ttk.Button(excel_btns, text="Alle entfernen", command=excel_clear_selected).pack(side="left", padx=4)
+    return frame
+
+# Instantiate tabs
+lookup_frame, hotel_combo = create_lookup_tab(
+    notebook,
+    hotel_names,
+    lookup,
+    init_detail_panel,
+    clear_detail_panel,
+    init_single_compose_ui,
+    single_attachments_enabled_var,
+    single_attachments_root_var,
 )
-hyatt_mode_combo.pack(anchor="w")
-
-for col in range(5):
-    filters_frame.columnconfigure(col, weight=1)
-
-apply_filter_btn = ttk.Button(filters_frame, text="Apply Filter", command=refresh_filtered_hotels)
-apply_filter_btn.grid(row=0, column=6, sticky="e", padx=8, pady=2)
-
-reset_filter_btn = ttk.Button(filters_frame, text="Reset Filters", command=reset_filters)
-reset_filter_btn.grid(row=0, column=7, sticky="e", padx=8, pady=2)
-
-lists_pane = ttk.Panedwindow(multi_frame, orient="horizontal")
-lists_pane.pack(fill="both", expand=True, padx=5, pady=5)
-
-# Buttons between filters and panes
-buttons_bar = ttk.Frame(multi_frame)
-buttons_bar.pack(fill="x", padx=5, pady=(0, 5))
-ttk.Button(buttons_bar, text="Select", command=add_selected_hotels).pack(side="left", padx=4)
-ttk.Button(buttons_bar, text="Select All", command=add_all_filtered_hotels).pack(side="left", padx=4)
-ttk.Button(buttons_bar, text="Remove", command=remove_selected_hotels).pack(side="left", padx=4)
-ttk.Button(buttons_bar, text="Remove All", command=clear_selected_hotels).pack(side="left", padx=4)
-
-filtered_frame = ttk.LabelFrame(lists_pane, text="Gefilterte Hotels", padding=5)
-lists_pane.add(filtered_frame, weight=1)
-
-filtered_tree = ttk.Treeview(
-    filtered_frame,
-    columns=("Spirit", "Hotel", "City", "Brand", "Brand Band", "Relationship", "Region", "Country"),
-    show="headings",
-    selectmode="extended",
+multi_frame = create_multi_tab(notebook)
+excel_frame = create_excel_tab(notebook)
+setup_frame, setup_combos = create_setup_tab(
+    notebook,
+    brand_col_var,
+    region_col_var,
+    country_col_var,
+    country_fallback_col_var,
+    city_col_var,
+    brand_band_col_var,
+    relationship_col_var,
+    hyatt_date_col_var,
+    avp_col_var,
+    md_col_var,
+    gm_col_var,
+    eng_col_var,
+    dof_col_var,
+    reg_eng_spec_col_var,
+    add_role_selector,
+    apply_column_settings,
 )
-filtered_xscroll = ttk.Scrollbar(filtered_frame, orient="horizontal", command=filtered_tree.xview)
-filtered_tree.configure(xscrollcommand=filtered_xscroll.set)
-for col, width in [
-    ("Spirit", 70),
-    ("Hotel", 220),
-    ("City", 120),
-    ("Brand", 120),
-    ("Brand Band", 120),
-    ("Relationship", 120),
-    ("Region", 120),
-    ("Country", 140),
-]:
-    filtered_tree.heading(col, text=col)
-    filtered_tree.column(col, width=width, stretch=True)
-filtered_tree.pack(fill="both", expand=True)
-filtered_xscroll.pack(fill="x")
-enable_treeview_sort(filtered_tree)
-
-selected_frame = ttk.LabelFrame(lists_pane, text="Ausgewaehlte Hotels", padding=5)
-lists_pane.add(selected_frame, weight=1)
-
-selected_widths = {
-    "Spirit": 60,
-    "Hotel": 260,
-    "Recipients": 500,
-    "AVP": 30,
-    "MD": 30,
-    "GM": 30,
-    "ENG": 30,
-    "DOF": 30,
-    "RES": 30,
-}
-selected_tree, selected_xscroll = build_recipient_tree(selected_frame, widths=selected_widths, add_scroll=True)
-selected_tree.pack(fill="both", expand=True)
-if selected_xscroll:
-    selected_xscroll.pack(fill="x")
-enable_treeview_sort(selected_tree)
-
-draft_btn = ttk.Button(multi_frame, text="Draft Emails in Outlook", command=draft_emails_for_selection)
-draft_btn.pack(anchor="e", padx=8, pady=6)
-collective_btn = ttk.Button(multi_frame, text="Draft ONE collective email", command=draft_collective_email)
-collective_btn.pack(anchor="e", padx=8, pady=(0, 6))
-
-# ---------------------------------------------------------------------------
-# Tab 3: Excel Emails
-# ---------------------------------------------------------------------------
-excel_frame = ttk.Frame(notebook, padding=10)
-notebook.add(excel_frame, text="Excel Emails")
-
-excel_top = ttk.Frame(excel_frame)
-excel_top.pack(fill="x", pady=(0, 10))
-ttk.Label(excel_top, text="Excel-Datei fuer Emails laden:").pack(side="left", padx=4)
-ttk.Button(excel_top, text="Datei laden", command=load_excel_email_file).pack(side="left", padx=4)
-ttk.Label(excel_top, textvariable=excel_file_label_var, foreground="gray").pack(side="left", padx=8)
-
-# Forward controls (Excel)
-excel_forward_bar = ttk.Frame(excel_frame)
-excel_forward_bar.pack(fill="x", padx=5, pady=(0, 6))
-ttk.Label(excel_forward_bar, text="Forward-Email (optional):").pack(side="left", padx=4)
-ttk.Button(excel_forward_bar, text="Browse Outlook...", command=browse_outlook_email).pack(side="left", padx=4)
-ttk.Button(excel_forward_bar, text="Clear Forward", command=clear_forward_template).pack(side="left", padx=4)
-ttk.Label(excel_forward_bar, textvariable=forward_status_var, foreground="gray").pack(side="left", padx=8)
-
-# Attachments controls (Excel)
-excel_attachments_frame = ttk.LabelFrame(excel_frame, text="Attachments (Excel emails)", padding=6)
-excel_attachments_frame.pack(fill="x", padx=5, pady=(0, 6))
-ttk.Checkbutton(excel_attachments_frame, text="Enable attachments", variable=attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
-ttk.Label(excel_attachments_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-attach_entry_excel = ttk.Entry(excel_attachments_frame, textvariable=attachments_root_var)
-attach_entry_excel.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
-ttk.Button(excel_attachments_frame, text="Browse", command=browse_attachments_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
-excel_attachments_frame.columnconfigure(1, weight=1)
-
-mapping_box = ttk.LabelFrame(excel_frame, text="Spaltenzuordnung", padding=8)
-mapping_box.pack(fill="both", expand=True, pady=(0, 10))
-ttk.Label(mapping_box, text="Waehlen Sie je Spalte: Spirit Code / Include in Body / Skip").pack(anchor="w", pady=(0, 6))
-mapping_container = ttk.Frame(mapping_box)
-mapping_container.pack(fill="both", expand=True)
-headers_canvas = tk.Canvas(mapping_container, borderwidth=0, highlightthickness=0)
-headers_scroll = ttk.Scrollbar(mapping_container, orient="vertical", command=headers_canvas.yview)
-excel_headers_frame = ttk.Frame(headers_canvas)
-headers_window = headers_canvas.create_window((0, 0), window=excel_headers_frame, anchor="nw")
-def _on_headers_config(event):
-    headers_canvas.configure(scrollregion=headers_canvas.bbox("all"))
-excel_headers_frame.bind("<Configure>", _on_headers_config)
-headers_canvas.configure(yscrollcommand=headers_scroll.set)
-headers_canvas.pack(side="left", fill="both", expand=True)
-headers_scroll.pack(side="right", fill="y")
-
-filter_bar = ttk.Frame(excel_frame)
-filter_bar.pack(fill="x", pady=4)
-excel_filter_summary_var = tk.StringVar(value="")
-ttk.Button(filter_bar, text="Filter anwenden", command=refresh_excel_filtered_tree).pack(side="left", padx=4)
-ttk.Button(filter_bar, text="Filter loeschen", command=lambda: [lb.selection_clear(0, tk.END) for _, _, lb in excel_filter_controls] or refresh_excel_filtered_tree()).pack(side="left", padx=4)
-ttk.Label(filter_bar, textvariable=excel_filter_summary_var, foreground="gray").pack(side="left", padx=6)
-excel_filtered_count_var = tk.StringVar(value="Gefiltert: 0")
-ttk.Label(filter_bar, textvariable=excel_filtered_count_var, foreground="gray").pack(side="left", padx=6)
-
-actions = ttk.Frame(excel_frame)
-actions.pack(fill="x", pady=4)
-ttk.Label(actions, text="Versand-Modus:").pack(side="left", padx=10)
-ttk.Radiobutton(actions, text="Einzel pro Hotel", variable=excel_mode_var, value="dedicated").pack(side="left")
-ttk.Radiobutton(actions, text="Eine Sammelmail", variable=excel_mode_var, value="collective").pack(side="left", padx=6)
-ttk.Button(actions, text="Emails erstellen", command=prompt_excel_compose).pack(side="right", padx=4)
-
-excel_lists = ttk.Panedwindow(excel_frame, orient="horizontal")
-excel_lists.pack(fill="both", expand=True, pady=6)
-
-excel_filtered_frame = ttk.LabelFrame(excel_lists, text="Gefilterte Excel-Hotels", padding=5)
-excel_lists.add(excel_filtered_frame, weight=1)
-excel_widths = {
-    "Spirit": 70,
-    "Hotel": 220,
-    "Recipients": 420,
-    "AVP": 40,
-    "MD": 40,
-    "GM": 40,
-    "ENG": 40,
-    "DOF": 40,
-    "RES": 40,
-}
-excel_filtered_tree, _ = build_recipient_tree(excel_filtered_frame, widths=excel_widths, add_scroll=False)
-excel_filtered_tree.pack(fill="both", expand=True)
-enable_treeview_sort(excel_filtered_tree)
-
-excel_selected_frame = ttk.LabelFrame(excel_lists, text="Ausgewaehlte Excel-Hotels", padding=5)
-excel_lists.add(excel_selected_frame, weight=1)
-excel_selected_tree, _ = build_recipient_tree(excel_selected_frame, widths=excel_widths, add_scroll=False)
-excel_selected_tree.pack(fill="both", expand=True)
-enable_treeview_sort(excel_selected_tree)
-
-excel_btns = ttk.Frame(excel_frame)
-excel_btns.pack(fill="x", pady=4)
-ttk.Button(excel_btns, text="Auswahl hinzufuegen", command=excel_add_selected).pack(side="left", padx=4)
-ttk.Button(excel_btns, text="Alle hinzufuegen", command=excel_add_all).pack(side="left", padx=4)
-ttk.Button(excel_btns, text="Entfernen", command=excel_remove_selected).pack(side="left", padx=4)
-ttk.Button(excel_btns, text="Alle entfernen", command=excel_clear_selected).pack(side="left", padx=4)
-
-# ---------------------------------------------------------------------------
-# Tab 4: Setup
-# ---------------------------------------------------------------------------
-setup_frame = ttk.Frame(notebook, padding=10)
-notebook.add(setup_frame, text="Setup")
-
-setup_top = ttk.LabelFrame(setup_frame, text="Data Columns", padding=10)
-setup_top.pack(fill="x", padx=5, pady=5)
-
-brand_col_combo = ttk.Combobox(setup_top, textvariable=brand_col_var, state="readonly")
-region_col_combo = ttk.Combobox(setup_top, textvariable=region_col_var, state="readonly")
-country_col_combo = ttk.Combobox(setup_top, textvariable=country_col_var, state="readonly")
-country_fallback_combo = ttk.Combobox(setup_top, textvariable=country_fallback_col_var, state="readonly")
-city_col_combo = ttk.Combobox(setup_top, textvariable=city_col_var, state="readonly")
-brand_band_col_combo = ttk.Combobox(setup_top, textvariable=brand_band_col_var, state="readonly")
-relationship_col_combo = ttk.Combobox(setup_top, textvariable=relationship_col_var, state="readonly")
-hyatt_date_col_combo = ttk.Combobox(setup_top, textvariable=hyatt_date_col_var, state="readonly")
-
-row_setup = 0
-labels = [
-    ("Brand column", brand_col_combo),
-    ("Brand Band column", brand_band_col_combo),
-    ("Region column", region_col_combo),
-    ("Country column", country_col_combo),
-    ("Country fallback (optional)", country_fallback_combo),
-    ("City column", city_col_combo),
-    ("Relationship column", relationship_col_combo),
-    ("Hyatt Date column (for year filter)", hyatt_date_col_combo),
-]
-for idx, (text, combo) in enumerate(labels):
-    ttk.Label(setup_top, text=text).grid(row=row_setup + idx, column=0, sticky="w", padx=5, pady=2)
-    combo.grid(row=row_setup + idx, column=1, sticky="ew", padx=5, pady=2)
-setup_top.columnconfigure(1, weight=1)
-
-roles_setup = ttk.LabelFrame(setup_frame, text="Recipient Columns", padding=10)
-roles_setup.pack(fill="x", padx=5, pady=5)
-
-avp_col_combo = ttk.Combobox(roles_setup, textvariable=avp_col_var, state="readonly")
-md_col_combo = ttk.Combobox(roles_setup, textvariable=md_col_var, state="readonly")
-gm_col_combo = ttk.Combobox(roles_setup, textvariable=gm_col_var, state="readonly")
-eng_col_combo = ttk.Combobox(roles_setup, textvariable=eng_col_var, state="readonly")
-dof_col_combo = ttk.Combobox(roles_setup, textvariable=dof_col_var, state="readonly")
-reg_eng_spec_combo = ttk.Combobox(roles_setup, textvariable=reg_eng_spec_col_var, state="readonly")
-
-labels_roles = [
-    ("AVP column", avp_col_combo),
-    ("Managing Director column", md_col_combo),
-    ("GM column", gm_col_combo),
-    ("Engineering column", eng_col_combo),
-    ("DOF column", dof_col_combo),
-    ("Regional Eng Specialist column (optional)", reg_eng_spec_combo),
-]
-for idx, (text, combo) in enumerate(labels_roles):
-    ttk.Label(roles_setup, text=text).grid(row=idx, column=0, sticky="w", padx=5, pady=2)
-    combo.grid(row=idx, column=1, sticky="ew", padx=5, pady=2)
-roles_setup.columnconfigure(1, weight=1)
-
-role_delivery = ttk.LabelFrame(setup_frame, text="Role Delivery (To/CC/BCC)", padding=10)
-role_delivery.pack(fill="x", padx=5, pady=5)
-role_delivery.columnconfigure(1, weight=1)
-add_role_selector(role_delivery, "AVP", "Skip")
-add_role_selector(role_delivery, "MD", "Skip")
-add_role_selector(role_delivery, "GM", "To")
-add_role_selector(role_delivery, "Engineering", "CC")
-add_role_selector(role_delivery, "DOF", "CC")
-add_role_selector(role_delivery, "RegionalEngineeringSpecialist", "CC")
-
-# browse function defined earlier; controls now on Multi-email tab only
-
-visible_cols_frame = ttk.LabelFrame(setup_frame, text='Columns shown in "Gefilterte Hotels"', padding=10)
-visible_cols_frame.pack(fill="both", padx=5, pady=5)
-filter_cols_listbox = tk.Listbox(visible_cols_frame, selectmode="extended", height=8, exportselection=False)
-filter_cols_listbox.pack(fill="both", expand=True)
-
-apply_columns_btn = ttk.Button(setup_frame, text="Apply column mapping", command=apply_column_settings)
-apply_columns_btn.pack(anchor="e", padx=5, pady=10)
+brand_col_combo = setup_combos["brand_col_combo"]
+region_col_combo = setup_combos["region_col_combo"]
+country_col_combo = setup_combos["country_col_combo"]
+country_fallback_combo = setup_combos["country_fallback_combo"]
+city_col_combo = setup_combos["city_col_combo"]
+brand_band_col_combo = setup_combos["brand_band_col_combo"]
+relationship_col_combo = setup_combos["relationship_col_combo"]
+hyatt_date_col_combo = setup_combos["hyatt_date_col_combo"]
+avp_col_combo = setup_combos["avp_col_combo"]
+md_col_combo = setup_combos["md_col_combo"]
+gm_col_combo = setup_combos["gm_col_combo"]
+eng_col_combo = setup_combos["eng_col_combo"]
+dof_col_combo = setup_combos["dof_col_combo"]
+reg_eng_spec_combo = setup_combos["reg_eng_spec_combo"]
+filter_cols_listbox = setup_combos["filter_cols_listbox"]
 
 # Status bar
 status_label = ttk.Label(root, textvariable=status_var, relief=tk.SUNKEN, anchor="w")
