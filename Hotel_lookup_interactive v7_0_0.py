@@ -37,6 +37,7 @@ from filters import apply_filters
 from mail_utils import render_with_signature, get_outlook_app, save_forward
 from ui_common import make_multiselect
 from tabs_lookup_setup import create_lookup_tab, create_setup_tab
+from tabs_multi_excel import create_multi_tab, create_excel_tab
 
 # Cache Outlook availability and instance so email drafting is faster after the first use
 WIN32COM_AVAILABLE = os.name == "nt" and importlib.util.find_spec("win32com.client") is not None
@@ -2849,20 +2850,37 @@ def draft_email_single(checkbox_vars, hotel_name, details_window=None):
             body_template = body_text.get("1.0", "end").rstrip("\n")
             dialog.destroy()
 
+            mail_item = None
+            last_err = None
             try:
-                outlook = get_outlook_app()
-                mail_item = outlook.CreateItem(0)
-                try:
-                    mail_item.BodyFormat = 2  # olFormatHTML
-                except Exception:
-                    pass
+                import pythoncom  # type: ignore
+                pythoncom.CoInitialize()
             except Exception:
+                pass
+
+            # Try cached Outlook (if warmed), then force refresh, then new dispatch
+            for attempt in ("cached", "refresh", "dispatch"):
                 try:
-                    outlook = get_outlook_app(force_refresh=True)
+                    if attempt == "cached":
+                        outlook = get_outlook_app()
+                    elif attempt == "refresh":
+                        outlook = get_outlook_app(force_refresh=True)
+                    else:
+                        import win32com.client  # type: ignore[import-untyped]
+                        outlook = win32com.client.Dispatch("Outlook.Application")
                     mail_item = outlook.CreateItem(0)
-                except Exception as exc:  # pragma: no cover - Outlook automation is Windows-specific
-                    messagebox.showerror("Email Error", f"Could not draft email in Outlook: {exc}")
-                    return
+                    try:
+                        mail_item.BodyFormat = 2  # olFormatHTML
+                    except Exception:
+                        pass
+                    last_err = None
+                    break
+                except Exception as exc:
+                    last_err = exc
+                    mail_item = None
+            if mail_item is None:
+                messagebox.showerror("Email Error", f"Could not draft email in Outlook: {last_err}")
+                return
 
             to_list, cc_list, bcc_list = [], [], []
             for var, email, role_key in checkbox_vars:
@@ -3056,241 +3074,6 @@ root.config(menu=menubar)
 notebook = ttk.Notebook(root)
 notebook.pack(fill="both", expand=True)
 
-def create_multi_tab(notebook):
-    """Build and attach the multi-email tab."""
-    global forward_status_var, quick_spirit_var, filtered_count_var
-    global filtered_tree, selected_tree
-    global brand_listbox, brand_band_listbox, region_listbox, relationship_listbox, country_listbox
-    global hyatt_year_var, hyatt_year_mode_var
-
-    frame = ttk.Frame(notebook, padding=10)
-    notebook.add(frame, text="Multi-Email")
-
-    root.minsize(1150, 820)
-    forward_bar = ttk.Frame(frame)
-    forward_bar.pack(fill="x", padx=5, pady=(0, 6))
-    forward_status_var = tk.StringVar(value="No source email captured.")
-    ttk.Button(forward_bar, text="Browse Outlook...", command=browse_outlook_email).pack(side="left", padx=4)
-    ttk.Button(forward_bar, text="Clear Forward", command=clear_forward_template).pack(side="left", padx=4)
-    ttk.Label(forward_bar, textvariable=forward_status_var, foreground="gray").pack(side="left", padx=8)
-
-    quick_frame = ttk.Frame(frame)
-    quick_frame.pack(fill="x", padx=5, pady=(0, 6))
-    ttk.Label(quick_frame, text="Quick Spirit Codes (comma separated)").pack(side="left", padx=4)
-    quick_spirit_var = tk.StringVar()
-    quick_entry = ttk.Entry(quick_frame, textvariable=quick_spirit_var)
-    quick_entry.pack(side="left", padx=4, fill="x", expand=True)
-    ttk.Button(quick_frame, text="Apply Quick Filter", command=refresh_filtered_hotels).pack(side="left", padx=4)
-    filtered_count_var = tk.StringVar(value="Filtered: 0")
-    ttk.Label(quick_frame, textvariable=filtered_count_var, foreground="gray").pack(side="right", padx=4)
-
-    attachments_frame = ttk.LabelFrame(frame, text="Attachments (multi-email)", padding=6)
-    attachments_frame.pack(fill="x", padx=5, pady=(0, 6))
-    ttk.Checkbutton(attachments_frame, text="Enable attachments", variable=attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
-    ttk.Label(attachments_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-    attach_entry = ttk.Entry(attachments_frame, textvariable=attachments_root_var)
-    attach_entry.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
-    ttk.Button(attachments_frame, text="Browse", command=browse_attachments_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
-    attachments_frame.columnconfigure(1, weight=1)
-
-    filters_frame = ttk.LabelFrame(frame, text="Filter Hotels", padding=10)
-    filters_frame.pack(fill="x", padx=5, pady=5)
-
-    hyatt_year_var.set("")
-    hyatt_year_mode_var.set("Any")
-
-    row_f = 0
-    brand_wrap, brand_listbox = make_multiselect(filters_frame, "Brand (multi-select)")
-    brand_wrap.grid(row=row_f, column=0, sticky="nsew", padx=4, pady=2)
-
-    band_wrap, brand_band_listbox = make_multiselect(filters_frame, "Brand Band")
-    band_wrap.grid(row=row_f, column=1, sticky="nsew", padx=4, pady=2)
-
-    region_wrap, region_listbox = make_multiselect(filters_frame, "Region")
-    region_wrap.grid(row=row_f, column=2, sticky="nsew", padx=4, pady=2)
-
-    relationship_wrap, relationship_listbox = make_multiselect(filters_frame, "Relationship")
-    relationship_wrap.grid(row=row_f, column=3, sticky="nsew", padx=4, pady=2)
-
-    country_wrap, country_listbox = make_multiselect(filters_frame, "Country/Area")
-    country_wrap.grid(row=row_f, column=4, sticky="nsew", padx=4, pady=2)
-
-    hyatt_wrap = ttk.Frame(filters_frame)
-    hyatt_wrap.grid(row=row_f, column=5, sticky="nw", padx=4, pady=2)
-    ttk.Label(hyatt_wrap, text="Hyatt Date (year)").pack(anchor="w")
-    hyatt_year_entry = ttk.Entry(hyatt_wrap, textvariable=hyatt_year_var, width=10)
-    hyatt_year_entry.pack(anchor="w", pady=(0, 2))
-    hyatt_mode_combo = ttk.Combobox(
-        hyatt_wrap,
-        textvariable=hyatt_year_mode_var,
-        values=["Any", "Before", "Before/Equal", "Equal", "After/Equal", "After"],
-        state="readonly",
-        width=12,
-    )
-    hyatt_mode_combo.pack(anchor="w")
-
-    for col in range(5):
-        filters_frame.columnconfigure(col, weight=1)
-
-    ttk.Button(filters_frame, text="Apply Filter", command=refresh_filtered_hotels).grid(row=0, column=6, sticky="e", padx=8, pady=2)
-    ttk.Button(filters_frame, text="Reset Filters", command=reset_filters).grid(row=0, column=7, sticky="e", padx=8, pady=2)
-
-    lists_pane = ttk.Panedwindow(frame, orient="horizontal")
-    lists_pane.pack(fill="both", expand=True, padx=5, pady=5)
-
-    buttons_bar = ttk.Frame(frame)
-    buttons_bar.pack(fill="x", padx=5, pady=(0, 5))
-    ttk.Button(buttons_bar, text="Select", command=add_selected_hotels).pack(side="left", padx=4)
-    ttk.Button(buttons_bar, text="Select All", command=add_all_filtered_hotels).pack(side="left", padx=4)
-    ttk.Button(buttons_bar, text="Remove", command=remove_selected_hotels).pack(side="left", padx=4)
-    ttk.Button(buttons_bar, text="Remove All", command=clear_selected_hotels).pack(side="left", padx=4)
-
-    filtered_frame = ttk.LabelFrame(lists_pane, text="Gefilterte Hotels", padding=5)
-    lists_pane.add(filtered_frame, weight=1)
-
-    filtered_tree = ttk.Treeview(
-        filtered_frame,
-        columns=("Spirit", "Hotel", "City", "Brand", "Brand Band", "Relationship", "Region", "Country"),
-        show="headings",
-        selectmode="extended",
-    )
-    filtered_xscroll = ttk.Scrollbar(filtered_frame, orient="horizontal", command=filtered_tree.xview)
-    filtered_tree.configure(xscrollcommand=filtered_xscroll.set)
-    for col, width in [
-        ("Spirit", 70),
-        ("Hotel", 220),
-        ("City", 120),
-        ("Brand", 120),
-        ("Brand Band", 120),
-        ("Relationship", 120),
-        ("Region", 120),
-        ("Country", 140),
-    ]:
-        filtered_tree.heading(col, text=col)
-        filtered_tree.column(col, width=width, stretch=True)
-    filtered_tree.pack(fill="both", expand=True)
-    filtered_xscroll.pack(fill="x")
-    enable_treeview_sort(filtered_tree)
-
-    selected_frame = ttk.LabelFrame(lists_pane, text="Ausgewaehlte Hotels", padding=5)
-    lists_pane.add(selected_frame, weight=1)
-
-    selected_widths = {
-        "Spirit": 60,
-        "Hotel": 260,
-        "Recipients": 500,
-        "AVP": 30,
-        "MD": 30,
-        "GM": 30,
-        "ENG": 30,
-        "DOF": 30,
-        "RES": 30,
-    }
-    selected_tree, selected_xscroll = build_recipient_tree(selected_frame, widths=selected_widths, add_scroll=True)
-    selected_tree.pack(fill="both", expand=True)
-    if selected_xscroll:
-        selected_xscroll.pack(fill="x")
-    enable_treeview_sort(selected_tree)
-
-    ttk.Button(frame, text="Draft Emails in Outlook", command=draft_emails_for_selection).pack(anchor="e", padx=8, pady=6)
-    ttk.Button(frame, text="Draft ONE collective email", command=draft_collective_email).pack(anchor="e", padx=8, pady=(0, 6))
-    return frame
-
-def create_excel_tab(notebook):
-    """Build and attach the Excel-email tab."""
-    global excel_headers_frame, excel_filter_summary_var, excel_filtered_count_var
-    global excel_filtered_tree, excel_selected_tree
-
-    frame = ttk.Frame(notebook, padding=10)
-    notebook.add(frame, text="Excel Emails")
-
-    excel_top = ttk.Frame(frame)
-    excel_top.pack(fill="x", pady=(0, 10))
-    ttk.Label(excel_top, text="Excel-Datei fuer Emails laden:").pack(side="left", padx=4)
-    ttk.Button(excel_top, text="Datei laden", command=load_excel_email_file).pack(side="left", padx=4)
-    ttk.Label(excel_top, textvariable=excel_file_label_var, foreground="gray").pack(side="left", padx=8)
-
-    excel_forward_bar = ttk.Frame(frame)
-    excel_forward_bar.pack(fill="x", padx=5, pady=(0, 6))
-    ttk.Label(excel_forward_bar, text="Forward-Email (optional):").pack(side="left", padx=4)
-    ttk.Button(excel_forward_bar, text="Browse Outlook...", command=browse_outlook_email).pack(side="left", padx=4)
-    ttk.Button(excel_forward_bar, text="Clear Forward", command=clear_forward_template).pack(side="left", padx=4)
-    ttk.Label(excel_forward_bar, textvariable=forward_status_var, foreground="gray").pack(side="left", padx=8)
-
-    excel_attachments_frame = ttk.LabelFrame(frame, text="Attachments (Excel emails)", padding=6)
-    excel_attachments_frame.pack(fill="x", padx=5, pady=(0, 6))
-    ttk.Checkbutton(excel_attachments_frame, text="Enable attachments", variable=attachments_enabled_var).grid(row=0, column=0, sticky="w", padx=4, pady=2)
-    ttk.Label(excel_attachments_frame, text="Attachments root").grid(row=1, column=0, sticky="w", padx=4, pady=2)
-    attach_entry_excel = ttk.Entry(excel_attachments_frame, textvariable=attachments_root_var)
-    attach_entry_excel.grid(row=1, column=1, sticky="ew", padx=4, pady=2)
-    ttk.Button(excel_attachments_frame, text="Browse", command=browse_attachments_root).grid(row=1, column=2, sticky="e", padx=4, pady=2)
-    excel_attachments_frame.columnconfigure(1, weight=1)
-
-    mapping_box = ttk.LabelFrame(frame, text="Spaltenzuordnung", padding=8)
-    mapping_box.pack(fill="both", expand=True, pady=(0, 10))
-    ttk.Label(mapping_box, text="Waehlen Sie je Spalte: Spirit Code / Include in Body / Skip").pack(anchor="w", pady=(0, 6))
-    mapping_container = ttk.Frame(mapping_box)
-    mapping_container.pack(fill="both", expand=True)
-    headers_canvas = tk.Canvas(mapping_container, borderwidth=0, highlightthickness=0)
-    headers_scroll = ttk.Scrollbar(mapping_container, orient="vertical", command=headers_canvas.yview)
-    excel_headers_frame = ttk.Frame(headers_canvas)
-    headers_window = headers_canvas.create_window((0, 0), window=excel_headers_frame, anchor="nw")
-    def _on_headers_config(event):
-        headers_canvas.configure(scrollregion=headers_canvas.bbox("all"))
-    excel_headers_frame.bind("<Configure>", _on_headers_config)
-    headers_canvas.configure(yscrollcommand=headers_scroll.set)
-    headers_canvas.pack(side="left", fill="both", expand=True)
-    headers_scroll.pack(side="right", fill="y")
-
-    filter_bar = ttk.Frame(frame)
-    filter_bar.pack(fill="x", pady=4)
-    excel_filter_summary_var = tk.StringVar(value="")
-    ttk.Button(filter_bar, text="Filter anwenden", command=refresh_excel_filtered_tree).pack(side="left", padx=4)
-    ttk.Button(filter_bar, text="Filter loeschen", command=lambda: [lb.selection_clear(0, tk.END) for _, _, lb in excel_filter_controls] or refresh_excel_filtered_tree()).pack(side="left", padx=4)
-    ttk.Label(filter_bar, textvariable=excel_filter_summary_var, foreground="gray").pack(side="left", padx=6)
-    excel_filtered_count_var = tk.StringVar(value="Gefiltert: 0")
-    ttk.Label(filter_bar, textvariable=excel_filtered_count_var, foreground="gray").pack(side="left", padx=6)
-
-    actions = ttk.Frame(frame)
-    actions.pack(fill="x", pady=4)
-    ttk.Label(actions, text="Versand-Modus:").pack(side="left", padx=10)
-    ttk.Radiobutton(actions, text="Einzel pro Hotel", variable=excel_mode_var, value="dedicated").pack(side="left")
-    ttk.Radiobutton(actions, text="Eine Sammelmail", variable=excel_mode_var, value="collective").pack(side="left", padx=6)
-    ttk.Button(actions, text="Emails erstellen", command=prompt_excel_compose).pack(side="right", padx=4)
-
-    excel_lists = ttk.Panedwindow(frame, orient="horizontal")
-    excel_lists.pack(fill="both", expand=True, pady=6)
-
-    excel_filtered_frame = ttk.LabelFrame(excel_lists, text="Gefilterte Excel-Hotels", padding=5)
-    excel_lists.add(excel_filtered_frame, weight=1)
-    excel_widths = {
-        "Spirit": 70,
-        "Hotel": 220,
-        "Recipients": 420,
-        "AVP": 40,
-        "MD": 40,
-        "GM": 40,
-        "ENG": 40,
-        "DOF": 40,
-        "RES": 40,
-    }
-    excel_filtered_tree, _ = build_recipient_tree(excel_filtered_frame, widths=excel_widths, add_scroll=False)
-    excel_filtered_tree.pack(fill="both", expand=True)
-    enable_treeview_sort(excel_filtered_tree)
-
-    excel_selected_frame = ttk.LabelFrame(excel_lists, text="Ausgewaehlte Excel-Hotels", padding=5)
-    excel_lists.add(excel_selected_frame, weight=1)
-    excel_selected_tree, _ = build_recipient_tree(excel_selected_frame, widths=excel_widths, add_scroll=False)
-    excel_selected_tree.pack(fill="both", expand=True)
-    enable_treeview_sort(excel_selected_tree)
-
-    excel_btns = ttk.Frame(frame)
-    excel_btns.pack(fill="x", pady=4)
-    ttk.Button(excel_btns, text="Auswahl hinzufuegen", command=excel_add_selected).pack(side="left", padx=4)
-    ttk.Button(excel_btns, text="Alle hinzufuegen", command=excel_add_all).pack(side="left", padx=4)
-    ttk.Button(excel_btns, text="Entfernen", command=excel_remove_selected).pack(side="left", padx=4)
-    ttk.Button(excel_btns, text="Alle entfernen", command=excel_clear_selected).pack(side="left", padx=4)
-    return frame
 
 # Instantiate tabs
 lookup_frame, hotel_combo = create_lookup_tab(
@@ -3303,8 +3086,88 @@ lookup_frame, hotel_combo = create_lookup_tab(
     single_attachments_enabled_var,
     single_attachments_root_var,
 )
-multi_frame = create_multi_tab(notebook)
-excel_frame = create_excel_tab(notebook)
+multi_state = {
+    "attachments_enabled_var": attachments_enabled_var,
+    "attachments_root_var": attachments_root_var,
+    "hyatt_year_var": hyatt_year_var,
+    "hyatt_year_mode_var": hyatt_year_mode_var,
+    "forward_status_var": forward_status_var,
+    "quick_spirit_var": quick_spirit_var,
+    "filtered_count_var": filtered_count_var,
+    "brand_listbox": brand_listbox,
+    "brand_band_listbox": brand_band_listbox,
+    "region_listbox": region_listbox,
+    "relationship_listbox": relationship_listbox,
+    "country_listbox": country_listbox,
+    "filtered_tree": filtered_tree,
+    "selected_tree": selected_tree,
+}
+multi_callbacks = {
+    "browse_outlook_email": browse_outlook_email,
+    "clear_forward_template": clear_forward_template,
+    "refresh_filtered_hotels": refresh_filtered_hotels,
+    "reset_filters": reset_filters,
+    "add_selected_hotels": add_selected_hotels,
+    "add_all_filtered_hotels": add_all_filtered_hotels,
+    "remove_selected_hotels": remove_selected_hotels,
+    "clear_selected_hotels": clear_selected_hotels,
+    "draft_emails_for_selection": draft_emails_for_selection,
+    "draft_collective_email": draft_collective_email,
+    "browse_attachments_root": browse_attachments_root,
+}
+multi_frame = create_multi_tab(
+    notebook, multi_state, multi_callbacks, make_multiselect, build_recipient_tree, enable_treeview_sort
+)
+forward_status_var = multi_state["forward_status_var"]
+quick_spirit_var = multi_state["quick_spirit_var"]
+filtered_count_var = multi_state["filtered_count_var"]
+brand_listbox = multi_state["brand_listbox"]
+brand_band_listbox = multi_state["brand_band_listbox"]
+region_listbox = multi_state["region_listbox"]
+relationship_listbox = multi_state["relationship_listbox"]
+country_listbox = multi_state["country_listbox"]
+filtered_tree = multi_state["filtered_tree"]
+selected_tree = multi_state["selected_tree"]
+
+excel_state = {
+    "attachments_enabled_var": attachments_enabled_var,
+    "attachments_root_var": attachments_root_var,
+    "forward_status_var": forward_status_var,
+    "excel_file_label_var": excel_file_label_var,
+    "excel_filter_summary_var": excel_filter_summary_var,
+    "excel_filtered_count_var": None,
+    "excel_headers_frame": None,
+    "excel_filtered_tree": None,
+    "excel_selected_tree": None,
+    "excel_mode_var": excel_mode_var,
+}
+
+def _excel_filter_controls():
+    return excel_filter_controls
+
+excel_callbacks = {
+    "load_excel_email_file": load_excel_email_file,
+    "browse_outlook_email": browse_outlook_email,
+    "clear_forward_template": clear_forward_template,
+    "browse_attachments_root": browse_attachments_root,
+    "refresh_excel_filtered_tree": refresh_excel_filtered_tree,
+    "prompt_excel_compose": prompt_excel_compose,
+    "excel_add_selected": excel_add_selected,
+    "excel_add_all": excel_add_all,
+    "excel_remove_selected": excel_remove_selected,
+    "excel_clear_selected": excel_clear_selected,
+    "excel_filter_controls": _excel_filter_controls,
+}
+excel_frame = create_excel_tab(
+    notebook, excel_state, excel_callbacks, build_recipient_tree, enable_treeview_sort
+)
+forward_status_var = excel_state["forward_status_var"]  # shared var reused on Excel tab
+excel_filter_summary_var = excel_state["excel_filter_summary_var"]
+excel_filtered_count_var = excel_state["excel_filtered_count_var"]
+excel_headers_frame = excel_state["excel_headers_frame"]
+excel_filtered_tree = excel_state["excel_filtered_tree"]
+excel_selected_tree = excel_state["excel_selected_tree"]
+
 setup_frame, setup_combos = create_setup_tab(
     notebook,
     brand_col_var,
