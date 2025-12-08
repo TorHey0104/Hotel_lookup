@@ -36,8 +36,8 @@ from openpyxl.utils import get_column_letter, range_boundaries
 from filters import apply_filters
 from mail_utils import render_with_signature, get_outlook_app, save_forward
 from ui_common import make_multiselect
-from tabs_lookup_setup import create_lookup_tab, create_setup_tab
-from tabs_multi_excel import create_multi_tab, create_excel_tab
+from tabs_lookup_setup_v7_1_0 import create_setup_tab
+from tabs_multi_excel_v7_1_0 import create_multi_tab, create_excel_tab
 
 # Cache Outlook availability and instance so email drafting is faster after the first use
 WIN32COM_AVAILABLE = os.name == "nt" and importlib.util.find_spec("win32com.client") is not None
@@ -54,7 +54,7 @@ LOGO_PATH = os.path.join(BASE_DIR, "hyatt_logo.png")  # optional logo next to sc
 RECENT_CONFIG_PATH = os.path.join(BASE_DIR, "recent_configs.json")
 
 TOOL_NAME = "Hyatt EAME Hotel Lookup and Multi E-Mail Tool"
-VERSION = "7.0.0"
+VERSION = "7.1.0"
 VERSION_DATE = date.today().strftime("%d.%m.%Y")
 
 # Default column names (can be overridden in Setup tab)
@@ -3076,16 +3076,6 @@ notebook.pack(fill="both", expand=True)
 
 
 # Instantiate tabs
-lookup_frame, hotel_combo = create_lookup_tab(
-    notebook,
-    hotel_names,
-    lookup,
-    init_detail_panel,
-    clear_detail_panel,
-    init_single_compose_ui,
-    single_attachments_enabled_var,
-    single_attachments_root_var,
-)
 multi_state = {
     "attachments_enabled_var": attachments_enabled_var,
     "attachments_root_var": attachments_root_var,
