@@ -59,6 +59,19 @@ def render_with_signature(
     def wrap_block(content: str) -> str:
         return f"<div style='white-space:pre-wrap; {base_style}'>{content}</div>"
 
+    def extract_body_fragment(html_text: str) -> str:
+        lowered = html_text.lower()
+        body_start = lowered.find("<body")
+        if body_start == -1:
+            return html_text
+        start = lowered.find(">", body_start)
+        if start == -1:
+            return html_text
+        body_end = lowered.rfind("</body>")
+        if body_end == -1:
+            return html_text[start + 1 :]
+        return html_text[start + 1 : body_end]
+
     body_has_links = bool(link_pattern.search(body_text)) if not body_is_html else False
     user_block = body_text if body_is_html else wrap_block(to_html(body_text, allow_links=True))
 
@@ -71,7 +84,7 @@ def render_with_signature(
     forward_block = ""
     if forward_html:
         if forward_is_html or looks_like_html(forward_html):
-            forward_block = forward_html
+            forward_block = extract_body_fragment(forward_html)
         else:
             forward_block = wrap_block(to_html(forward_html, allow_links=True))
 
@@ -82,7 +95,7 @@ def render_with_signature(
         if forward_block:
             html_parts.append(forward_block)
         html_body = "<br><br>".join([p for p in html_parts if p])
-        if "<html" not in html_body.lower():
+        if not forward_html and "<html" not in html_body.lower():
             html_body = f"<!DOCTYPE html><html><body style=\"{base_style}\">{html_body}</body></html>"
         return {"html": html_body}
 

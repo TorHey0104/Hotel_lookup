@@ -2539,7 +2539,16 @@ def draft_collective_email():
     sigs = load_signatures()
     ttk.Label(dialog, text="Signature:").pack(anchor="w", padx=8, pady=(4, 2))
     sig_var = tk.StringVar(value="None")
-    ttk.Combobox(dialog, textvariable=sig_var, values=list(sigs.keys()), state="readonly").pack(fill="x", padx=8, pady=(0, 6))
+    sig_combo = ttk.Combobox(dialog, textvariable=sig_var, values=list(sigs.keys()), state="readonly")
+    sig_combo.pack(fill="x", padx=8, pady=(0, 6))
+    if forward_template.get("body_text"):
+        sig_var.set("None")
+        sig_combo.state(["disabled"])
+        ttk.Label(
+            dialog,
+            text="Signature disabled for forwarded emails to keep the original body intact.",
+            foreground="gray",
+        ).pack(anchor="w", padx=8, pady=(2, 6))
 
     attach_enabled = attachments_enabled_var.get() if attachments_enabled_var else False
     attach_root = attachments_root_var.get() if attachments_root_var else ""
@@ -2599,6 +2608,8 @@ def draft_collective_email():
         mail_item.Subject = subject
 
         sig_entry = sigs.get(sig_var.get(), {"html": "", "text": ""})
+        if forward_template.get("body_text"):
+            sig_entry = {"html": "", "text": ""}
         rendered = render_with_signature(
             body,
             sig_entry,
